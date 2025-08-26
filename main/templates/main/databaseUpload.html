@@ -1,0 +1,13 @@
+{% extends 'main/base.html' %}
+{% block title %}Upload Maimai Database{% endblock %}
+{% block content %}
+  <h1>Upload Maimai Database JSON</h1>
+  <form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    <input type="file" name="json_file" accept=".json" required>
+    <button type="submit">Upload</button>
+  </form>
+  {% if message %}
+    <p>{{ message }}</p>
+  {% endif %}
+{% endblock %}

@@ -1,0 +1,303 @@
+{% extends 'main/base.html' %}
+{% load dict_extras %}
+{% block title %}Calculator List{% endblock %}
+{% block content %}
+  <!-- Bootstrap CSS CDN (if not already in base.html) -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+
+  <style>
+    .diff-basic { background-color: #a3ecb4 !important; }
+    .diff-advanced { background-color: #e4d172 !important; }
+    .diff-expert { background-color: #e08c93 !important; }
+    .diff-master { background-color: #eb71eb !important; }
+    .diff-remas { background-color: #5f375f !important; }
+    .song-grid-cell {
+      min-height: 120px;
+      border: 5px solid #000 !important;
+      padding: 0.5rem;
+      vertical-align: top;
+      text-align: left;
+      font-size: 0.95rem;
+      transition: background 0.2s;
+      max-width: 200px;
+      word-break: break-word;
+      position: relative;
+    }
+    .song-title-oneline {
+      font-weight: bold;
+      position: absolute;
+      top: 0.5rem;
+      left: 0.5rem;
+      right: 0.5rem;
+      z-index: 3;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 170px;
+      color: #ffffff;
+      font-size: 1em;
+      /* Allow overlap with image */
+      pointer-events: none;
+    }
+    .song-cell-image {
+      position: absolute;
+      top: 0.5rem;
+      right: 0.5rem;
+      z-index: 2;
+    }
+    .song-cell-image img {
+      height: 105px;
+      max-width: 130px;
+      border-radius: 6px;
+    }
+    .song-cell-bottom-left {
+      position: absolute;
+      left: 0.5rem;
+      bottom: 0.5rem;
+      font-size: 0.93em;
+      z-index: 2;
+      text-align: left;
+      line-height: 1.1;
+    }
+    .song-rank-bold {
+      font-weight: bold;
+      font-size: 1.25em;
+      color: #fff;
+      text-shadow: 1px 1px 4px #000, 0 0 2px #000;
+      letter-spacing: 1px;
+      padding: 1px 8px 1px 2px;
+      border-radius: 6px;
+      display: inline-block;
+      margin-bottom: 2px;
+    }
+    .song-cell-bottom-right {
+      position: absolute;
+      right: 0.5rem;
+      bottom: 0.5rem;
+      font-size: 1.2em;
+      font-weight: bold;
+      z-index: 4;
+      text-align: right;
+      color: #222;
+      background: rgba(255,255,255,0.7);
+      padding: 2px 8px;
+      border-radius: 8px;
+      pointer-events: none;
+    }
+    .song-grid-cell-inner {
+      position: relative;
+      min-height: 120px;
+      height: 120px;
+      width: 100%;
+    }
+    /* Allow horizontal scrolling for wide grids */
+    .wide-grid-container {
+      overflow-x: auto;
+      width: 100vw;
+      max-width: 100%;
+    }
+    .wide-grid-table {
+      min-width: 1800px;
+      width: auto;
+    }
+    /* Extra thick horizontal border between row 7 and 8 */
+    .song-grid-cell.border-divider-row {
+      border-top: 12px solid #000 !important;
+    }
+  </style>
+
+  <div class="container-fluid my-4">
+    <h1 class="text-center mb-4">AstroDX Manual Rating Converter</h1>
+    <h2 class="text-center mb-4">Total Rating: {{ total_rating }}</h2>
+    <form method="post" class="row g-3 align-items-center mb-4 position-relative" autocomplete="off">
+      {% csrf_token %}
+      <div class="col-auto">
+        <label for="song_name" class="col-form-label">Song Name:</label>
+      </div>
+      <div class="col-auto position-relative" style="min-width:250px;">
+        <input type="text" id="song_name" name="song_name" maxlength="100" required autocomplete="off" class="form-control" oninput="showDropdown()">
+        <div id="songDropdown" class="dropdown-menu" style="display:none; max-height:200px; overflow-y:auto; width:100%;"></div>
+      </div>
+      <div class="col-auto">
+        <label for="difficulty_type" class="col-form-label">Difficulty:</label>
+      </div>
+      <div class="col-auto">
+        <select id="difficulty_type" name="difficulty_type" required class="form-select">
+          <option value="Basic">Basic</option>
+          <option value="Advanced">Advanced</option>
+          <option value="Expert">Expert</option>
+          <option value="Master">Master</option>
+          <option value="Re:Master">Re:Master</option>
+        </select>
+      </div>
+      <div class="col-auto">
+        <label for="achievement" class="col-form-label">Achievement:</label>
+      </div>
+      <div class="col-auto">
+        <input type="number" id="achievement" name="achievement" step="0.0001" min="0" max="101" required class="form-control">
+      </div>
+      <div class="col-auto">
+        <button type="submit" class="btn btn-primary">Add</button>
+      </div>
+    </form>
+    <script>
+      // List of all song names from the database (passed from Django)
+      const allSongNames = [
+        {% for song in all_song_names %}
+          "{{ song|escapejs }}"{% if not forloop.last %},{% endif %}
+        {% endfor %}
+      ];
+
+      const input = document.getElementById('song_name');
+      const dropdown = document.getElementById('songDropdown');
+
+      function showDropdown() {
+        const value = input.value.trim().toLowerCase();
+        dropdown.innerHTML = '';
+        if (!value) {
+          dropdown.style.display = 'none';
+          return;
+        }
+        const matches = allSongNames.filter(name => name.toLowerCase().includes(value));
+        if (matches.length === 0) {
+          dropdown.style.display = 'none';
+          return;
+        }
+        matches.forEach(name => {
+          const option = document.createElement('button');
+          option.type = 'button';
+          option.className = 'dropdown-item';
+          option.textContent = name;
+          option.onclick = function() {
+            input.value = name;
+            dropdown.style.display = 'none';
+          };
+          dropdown.appendChild(option);
+        });
+        dropdown.style.display = 'block';
+      }
+
+      // Hide dropdown when clicking outside
+      document.addEventListener('click', function(e) {
+        if (!input.contains(e.target) && !dropdown.contains(e.target)) {
+          dropdown.style.display = 'none';
+        }
+      });
+    </script>
+
+    <h2 class="mt-5">All Songs (Old + New) Grid View</h2>
+    <div class="table-responsive mb-4">
+      <table class="table table-bordered align-middle" style="table-layout: fixed;">
+        <tbody>
+          {% for row in merged_grid %}
+            <tr>
+              {% for song in row %}
+                {% if song %}
+                  {% with diff=song.difficulty_type|lower %}
+                    <td class="song-grid-cell
+                      {% if forloop.parentloop.counter == 8 %}border-divider-row{% endif %}
+                      {% if diff == 'basic' %} diff-basic
+                      {% elif diff == 'advanced' %} diff-advanced
+                      {% elif diff == 'expert' %} diff-expert
+                      {% elif diff == 'master' %} diff-master
+                      {% elif diff == 're:master' or diff == 're:mas' %} diff-remas
+                      {% endif %}">
+                  {% endwith %}
+                    <div class="song-grid-cell-inner">
+                      <span class="song-title-oneline">{{ song.song_name }}</span>
+                      {% with song_obj=maimai_songs_dict|get_item:song.song_name %}
+                        {% if song_obj and song_obj.image_url %}
+                          <a href="{{ song_obj.image_url }}" target="_blank" class="song-cell-image">
+                            <img src="{{ song_obj.image_url }}" alt="Image">
+                          </a>
+                        {% endif %}
+                      {% endwith %}
+                      <div class="song-cell-bottom-left">
+                        <span class="song-rank-bold">{{ song.rank }}</span><br>
+                        <span>{{ song.achievement }}%</span><br>
+                        <span>{{ song.chart_difficulty }}</span><br>
+                      </div>
+                      <div class="song-cell-bottom-right">
+                        {{ song.calculated_rating }}
+                      </div>
+                    </div>
+                  </td>
+                {% else %}
+                  <td class="song-grid-cell {% if forloop.parentloop.counter == 8 %}border-divider-row{% endif %}">
+                    <div class="song-grid-cell-inner"></div>
+                  </td>
+                {% endif %}
+              {% endfor %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+      <h2>Old Songs (Table View)</h2>
+    <div class="table-responsive mb-4">
+      <table class="table table-striped table-bordered align-middle">
+        <thead class="table-dark">
+          <tr>
+            <th>#</th>
+            <th>Song Name</th>
+            <th>Difficulty</th>
+            <th>Rank</th>
+            <th>Achievement</th>
+            <th>Chart Difficulty</th>
+            <th>Calculated Rating</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for song in old_songs %}
+          {% if song %}
+          <tr>
+            <td>{{ forloop.counter }}</td>
+            <td>{{ song.song_name }}</td>
+            <td>{{ song.difficulty_type }}</td>
+            <td>{{ song.rank }}</td>
+            <td>{{ song.achievement }}</td>
+            <td>{{ song.chart_difficulty }}</td>
+            <td>{{ song.calculated_rating }}</td>
+          </tr>
+          {% endif %}
+        {% empty %}
+          <tr><td colspan="7" class="text-center">No old songs found.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <h2>New Songs</h2>
+    <div class="table-responsive">
+      <table class="table table-striped table-bordered align-middle">
+        <thead class="table-dark">
+          <tr>
+            <th>#</th>
+            <th>Song Name</th>
+            <th>Difficulty</th>
+            <th>Rank</th>
+            <th>Achievement</th>
+            <th>Chart Difficulty</th>
+            <th>Calculated Rating</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for song in new_songs %}
+          <tr>
+            <td>{{ forloop.counter }}</td>
+            <td>{{ song.song_name }}</td>
+            <td>{{ song.difficulty_type }}</td>
+            <td>{{ song.rank }}</td>
+            <td>{{ song.achievement }}</td>
+            <td>{{ song.chart_difficulty }}</td>
+            <td>{{ song.calculated_rating }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="7" class="text-center">No new songs found.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+{% endblock %}
