@@ -170,8 +170,12 @@ def calculator_list(request):
         to_delete = NewSong.objects.all().order_by('calculated_rating')[:new_count-15]
         for obj in to_delete:
             obj.delete()
-    total_rating = sum(song.calculated_rating for song in old_songs if song is not None) + \
-                   sum(song.calculated_rating for song in new_songs if song is not None)
+    # Calculate total ratings
+    old_total_rating = sum(song.calculated_rating for song in old_songs if song)
+    new_total_rating = sum(song.calculated_rating for song in new_songs if song)
+    total_rating = old_total_rating + new_total_rating
+    total_count = sum(1 for song in old_songs if song) + sum(1 for song in new_songs if song)
+    total_average_rating = (total_rating / total_count) if total_count else 0
     all_song_names = MaimaiSong.objects.values_list('title', flat=True).distinct()
     maimai_songs = MaimaiSong.objects.all()
     maimai_songs_dict = {song.title: song for song in maimai_songs}
@@ -180,6 +184,9 @@ def calculator_list(request):
         "new_songs": new_songs,
         "merged_grid": merged_grid,  # <-- merged 10x5 grid
         "total_rating": total_rating,
+        "old_total_rating": old_total_rating,
+        "new_total_rating": new_total_rating,
+        "total_average_rating": total_average_rating,
         "all_song_names": all_song_names,
         "maimai_songs_dict": maimai_songs_dict,
     })

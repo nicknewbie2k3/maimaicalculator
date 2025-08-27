@@ -33,11 +33,33 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      max-width: 170px;
-      color: #ffffff;
+      padding-left: 6px;
+      padding-right: 6px;
+      max-width: 180px;
+      color: #222;
       font-size: 1em;
-      /* Allow overlap with image */
       pointer-events: none;
+      text-shadow:
+        0 0 4px #000,
+        0 0 2px #000,
+        1px 1px 2px #000,
+        -1px -1px 2px #000;
+    }
+    .song-title-std {
+      color: #72b2e6 !important; /* Blue for STD */
+      text-shadow:
+        0 0 4px #000,
+        0 0 2px #000,
+        1px 1px 2px #000,
+        -1px -1px 2px #000;
+    }
+    .song-title-dx {
+      color: #ffd600 !important; /* Yellow for DX */
+      text-shadow:
+        0 0 4px #000,
+        0 0 2px #000,
+        1px 1px 2px #000,
+        -1px -1px 2px #000;
     }
     .song-cell-image {
       position: absolute;
@@ -61,7 +83,7 @@
     }
     .song-rank-bold {
       font-weight: bold;
-      font-size: 1.25em;
+      font-size: 2em;
       color: #fff;
       text-shadow: 1px 1px 4px #000, 0 0 2px #000;
       letter-spacing: 1px;
@@ -69,6 +91,16 @@
       border-radius: 6px;
       display: inline-block;
       margin-bottom: 2px;
+    }
+    .song-chart-diff-bold {
+      font-weight: bold;
+      color: #fff;
+      text-shadow: 1px 1px 4px #000, 0 0 2px #000;
+      letter-spacing: 0.5px;
+      background: rgba(0,0,0,0.18);
+      border-radius: 4px;
+      padding: 0 4px;
+      display: inline-block;
     }
     .song-cell-bottom-right {
       position: absolute;
@@ -109,6 +141,11 @@
   <div class="container-fluid my-4">
     <h1 class="text-center mb-4">AstroDX Manual Rating Converter</h1>
     <h2 class="text-center mb-4">Total Rating: {{ total_rating }}</h2>
+    <h4 class="text-center mb-3">
+      Old Chart Total Rating: {{ old_total_rating }} &nbsp;|&nbsp;
+      New Chart Total Rating: {{ new_total_rating }} &nbsp;|&nbsp;
+      Total Average Rating: {{ total_average_rating|floatformat:0 }}
+    </h4>
     <form method="post" class="row g-3 align-items-center mb-4 position-relative" autocomplete="off">
       {% csrf_token %}
       <div class="col-auto">
@@ -204,7 +241,15 @@
                       {% endif %}">
                   {% endwith %}
                     <div class="song-grid-cell-inner">
-                      <span class="song-title-oneline">{{ song.song_name }}</span>
+                      {% with song_obj=maimai_songs_dict|get_item:song.song_name %}
+                        {% if song_obj %}
+                          <span class="song-title-oneline {% if song_obj.chart_type == 'STD' %}song-title-std{% elif song_obj.chart_type == 'DX' %}song-title-dx{% endif %}">
+                            {{ song.song_name }}
+                          </span>
+                        {% else %}
+                          <span class="song-title-oneline">{{ song.song_name }}</span>
+                        {% endif %}
+                      {% endwith %}
                       {% with song_obj=maimai_songs_dict|get_item:song.song_name %}
                         {% if song_obj and song_obj.image_url %}
                           <a href="{{ song_obj.image_url }}" target="_blank" class="song-cell-image">
@@ -215,7 +260,7 @@
                       <div class="song-cell-bottom-left">
                         <span class="song-rank-bold">{{ song.rank }}</span><br>
                         <span>{{ song.achievement }}%</span><br>
-                        <span>{{ song.chart_difficulty }}</span><br>
+                        <span class="song-chart-diff-bold">{{ song.chart_difficulty }}</span><br>
                       </div>
                       <div class="song-cell-bottom-right">
                         {{ song.calculated_rating }}
@@ -299,5 +344,6 @@
         </tbody>
       </table>
     </div>
+
   </div>
 {% endblock %}
