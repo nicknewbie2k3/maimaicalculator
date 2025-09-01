@@ -69,6 +69,11 @@
       text-align: left;
       line-height: 1.1;
     }
+    .song-cell-bottom-left span:nth-child(2) {
+      color: #fff;
+      text-shadow: 1px 1px 4px #000, 0 0 2px #000;
+      font-weight: bold;
+    }
     .song-rank-bold {
       font-weight: bold;
       font-size: 2em;
@@ -123,6 +128,11 @@
     /* Extra thick horizontal border between row 7 and 8 */
     .song-grid-cell.border-divider-row {
       border-top: 12px solid #000 !important;
+    }
+    .song-achievement {
+      color: #fff;
+      text-shadow: 1px 1px 4px #000, 0 0 2px #000;
+      font-weight: normal; /* Remove bold */
     }
   </style>
 
@@ -247,7 +257,7 @@
                       {% endwith %}
                       <div class="song-cell-bottom-left">
                         <span class="song-rank-bold">{{ song.rank }}</span><br>
-                        <span>{{ song.achievement }}%</span><br>
+                        <span class="song-achievement">{{ song.achievement }}%</span><br>
                         <span class="song-chart-diff-bold">{{ song.chart_difficulty }}</span><br>
                       </div>
                       <div class="song-cell-bottom-right">
