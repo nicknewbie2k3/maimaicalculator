@@ -13,6 +13,8 @@ và chạy link đó + /admin (ví dụ http://abcd:8000/admin) để vào admin
 4. Xoá toàn bộ thông tin trên New Song và Old Song section. (B50)
 5. Nhập tay dữ liệu vào web (với các bài title tiếng nhật cần copy y hệt tên vào) và enjoy (not) (lmao).
 
+Import dữ liệu của Maimai Song Database: File .json nằm trong /main/static/. Chọn option Database Upload trên web và import file đó vào r đợi 1 lúc để web quét dữ liệu file.
+
 Future direction:
 Thêm import và export qua json file (format từ dxrating)
 Sửa database display cho đỡ bình dương :v
