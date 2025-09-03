@@ -1,0 +1,21 @@
+Hướng dẫn sử dụng Astro Manual Calculator:
+
+1. Cài Python và Django rồi cài thêm dependency qua lệnh trên terminal (terminal vị trí ở folder chứa file requirements.txt)
+pip install -r requirements.txt
+2. Sau khi cài requirements, tạo tài khoản Django admin bằng lệnh:
+python manage.py createsuperuser
+rồi làm theo hướng dẫn của Django.
+3. Sau khi cài requirements, chạy lệnh sau trên terminal để mở local web:
+python manage.py runserver
+
+Sẽ có 1 dòng trên terminal viết Starting development server at <link>. chạy link đó để mở web
+và chạy link đó + /admin (ví dụ http://abcd:8000/admin) để vào admin database. 
+4. Xoá toàn bộ thông tin trên New Song và Old Song section. (B50)
+5. Nhập tay dữ liệu vào web (với các bài title tiếng nhật cần copy y hệt tên vào) và enjoy (not) (lmao).
+
+Future direction:
+Thêm import và export qua json file (format từ dxrating)
+Sửa database display cho đỡ bình dương :v
+
+Lưu ý: Database không phân loại chart JP, International hay CN!
+Thường xuyên cập nhật database hàng tháng theo update của con bot mimi xd bot (mình lấy dữ liệu từ nó).
