@@ -95,7 +95,7 @@ def calculator_list(request):
             'chart_difficulty': chart_difficulty,
             'difficulty_type': difficulty_type,  # Add difficulty_type to filter and create
         }
-        if version == "PRiSM PLUS":
+        if version in {"PRiSM PLUS", "CiRCLE"}:
             existing = NewSong.objects.filter(**filter_kwargs).first()
             if existing:
                 if achievement > existing.achievement:
