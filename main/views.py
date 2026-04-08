@@ -13,96 +13,111 @@ def parse_decimal(val):
 
 def calculator_list(request):
     if request.method == 'POST':
-        song_name = request.POST.get('song_name')
-        difficulty_type = request.POST.get('difficulty_type')
-        achievement = request.POST.get('achievement')
-        achievement = Decimal(achievement)
+        try:
+            song_name = request.POST.get('song_name')
+            difficulty_type = request.POST.get('difficulty_type')
+            achievement = request.POST.get('achievement')
+            
+            # Validate required fields
+            if not song_name or not difficulty_type or not achievement:
+                return JsonResponse({'status': 'error', 'message': 'Missing required fields'})
+            
+            # Convert achievement to Decimal with error handling
+            try:
+                achievement = Decimal(achievement)
+            except (InvalidOperation, ValueError):
+                return JsonResponse({'status': 'error', 'message': 'Invalid achievement value'})
 
-        # Cap achievement at 100.5 for calculation only
-        achievement_for_calc = achievement
-        if achievement_for_calc > Decimal('100.5'):
-            achievement_for_calc = Decimal('100.5')
+            # Cap achievement at 100.5 for calculation only
+            achievement_for_calc = achievement
+            if achievement_for_calc > Decimal('100.5'):
+                achievement_for_calc = Decimal('100.5')
 
-        # Get chart difficulty and version from MaimaiSong
-        song = MaimaiSong.objects.filter(title=song_name).first()
-        chart_difficulty = None
-        version = None
-        if song:
-            version = song.version
-            if difficulty_type == "Basic":
-                chart_difficulty = song.lev_bas
-            elif difficulty_type == "Advanced":
-                chart_difficulty = song.lev_adv
-            elif difficulty_type == "Expert":
-                chart_difficulty = song.lev_exp
-            elif difficulty_type == "Master":
-                chart_difficulty = song.lev_mas
-            elif difficulty_type == "Re:Master":
-                chart_difficulty = song.lev_remas
+            # Get chart difficulty and version from MaimaiSong
+            song = MaimaiSong.objects.filter(title=song_name).first()
+            chart_difficulty = None
+            version = None
+            if song:
+                version = song.version
+                if difficulty_type == "Basic":
+                    chart_difficulty = song.lev_bas
+                elif difficulty_type == "Advanced":
+                    chart_difficulty = song.lev_adv
+                elif difficulty_type == "Expert":
+                    chart_difficulty = song.lev_exp
+                elif difficulty_type == "Master":
+                    chart_difficulty = song.lev_mas
+                elif difficulty_type == "Re:Master":
+                    chart_difficulty = song.lev_remas
 
-        # If not found, set to 0
-        if not chart_difficulty:
-            chart_difficulty = Decimal('0')
+            # If not found, set to 0
+            if not chart_difficulty:
+                chart_difficulty = Decimal('0')
 
-        # Determine rank based on achievement
-        rank = ""
-        if Decimal('60') <= achievement < Decimal('70'):
-            rank = 'B'
-        elif Decimal('70') <= achievement < Decimal('75'):
-            rank = '2B'
-        elif Decimal('75') <= achievement < Decimal('80'):
-            rank = '3B'
-        elif Decimal('80') <= achievement < Decimal('90'):
-            rank = 'A'
-        elif Decimal('90') <= achievement < Decimal('94'):
-            rank = '2A'
-        elif Decimal('94') <= achievement < Decimal('97'):
-            rank = '3A'
-        elif Decimal('97') <= achievement < Decimal('98'):
-            rank = 'S'
-        elif Decimal('98') <= achievement < Decimal('99'):
-            rank = 'S+'
-        elif Decimal('99') <= achievement < Decimal('99.5'):
-            rank = '2S'
-        elif Decimal('99.5') <= achievement < Decimal('100'):
-            rank = '2S+'
-        elif Decimal('100') <= achievement < Decimal('100.5'):
-            rank = '3S'
-        elif achievement >= Decimal('100.5'):
-            rank = '3S+'
-        else:
-            rank = 'B'
+            # Determine rank based on achievement
+            rank = ""
+            if Decimal('60') <= achievement < Decimal('70'):
+                rank = 'B'
+            elif Decimal('70') <= achievement < Decimal('75'):
+                rank = '2B'
+            elif Decimal('75') <= achievement < Decimal('80'):
+                rank = '3B'
+            elif Decimal('80') <= achievement < Decimal('90'):
+                rank = 'A'
+            elif Decimal('90') <= achievement < Decimal('94'):
+                rank = '2A'
+            elif Decimal('94') <= achievement < Decimal('97'):
+                rank = '3A'
+            elif Decimal('97') <= achievement < Decimal('98'):
+                rank = 'S'
+            elif Decimal('98') <= achievement < Decimal('99'):
+                rank = 'S+'
+            elif Decimal('99') <= achievement < Decimal('99.5'):
+                rank = '2S'
+            elif Decimal('99.5') <= achievement < Decimal('100'):
+                rank = '2S+'
+            elif Decimal('100') <= achievement < Decimal('100.5'):
+                rank = '3S'
+            elif achievement >= Decimal('100.5'):
+                rank = '3S+'
+            else:
+                rank = 'B'
 
-        # Coefficient table
-        coefficients = {
-            'B': Decimal('9.6'),
-            '2B': Decimal('11.2'),
-            '3B': Decimal('12'),
-            'A': Decimal('13.6'),
-            '2A': Decimal('15.2'),
-            '3A': Decimal('16.8'),
-            'S': Decimal('20.0'),
-            'S+': Decimal('20.3'),
-            '2S': Decimal('20.8'),
-            '2S+': Decimal('21.1'),
-            '3S': Decimal('21.6'),
-            '3S+': Decimal('22.4'),
-        }
-        coefficient = coefficients.get(rank, Decimal('0'))
-        calculated_rating = (chart_difficulty * coefficient * achievement_for_calc / 100).to_integral_value(rounding=ROUND_DOWN)
+            # Coefficient table
+            coefficients = {
+                'B': Decimal('9.6'),
+                '2B': Decimal('11.2'),
+                '3B': Decimal('12'),
+                'A': Decimal('13.6'),
+                '2A': Decimal('15.2'),
+                '3A': Decimal('16.8'),
+                'S': Decimal('20.0'),
+                'S+': Decimal('20.3'),
+                '2S': Decimal('20.8'),
+                '2S+': Decimal('21.1'),
+                '3S': Decimal('21.6'),
+                '3S+': Decimal('22.4'),
+            }
+            coefficient = coefficients.get(rank, Decimal('0'))
+            calculated_rating = (chart_difficulty * coefficient * achievement_for_calc / 100).to_integral_value(rounding=ROUND_DOWN)
 
-        # Return song data as JSON for localStorage handling
-        song_data = {
-            'song_name': song_name,
-            'difficulty_type': difficulty_type,
-            'rank': rank,
-            'achievement': float(achievement),
-            'chart_difficulty': float(chart_difficulty),
-            'calculated_rating': int(calculated_rating),
-            'version': version
-        }
-        
-        return JsonResponse({'status': 'success', 'song_data': song_data})
+            # Return song data as JSON for localStorage handling
+            song_data = {
+                'song_name': song_name,
+                'difficulty_type': difficulty_type,
+                'rank': rank,
+                'achievement': float(achievement),
+                'chart_difficulty': float(chart_difficulty),
+                'calculated_rating': int(calculated_rating),
+                'version': version
+            }
+            
+            return JsonResponse({'status': 'success', 'song_data': song_data})
+            
+        except Exception as e:
+            # Log the error for debugging
+            print(f"Error in calculator_list POST: {e}")
+            return JsonResponse({'status': 'error', 'message': f'Server error: {str(e)}'})
 
     # Return empty data - frontend will populate from localStorage
     all_song_names = MaimaiSong.objects.values_list('title', flat=True).distinct()
@@ -168,44 +183,58 @@ def database_upload(request):
 def save_b50_data(request):
     """Export B50 data from localStorage as JSON file for download."""
     if request.method == 'POST':
-        # Receive B50 data from frontend localStorage
-        data = json.loads(request.body)
-        old_songs = data.get('old_songs', [])
-        new_songs = data.get('new_songs', [])
-        
-        # Ensure version information is included for all songs
-        for song in old_songs:
-            if 'version' not in song or not song['version']:
-                # Try to get version from database
-                maimai_song = MaimaiSong.objects.filter(title=song['song_name']).first()
-                if maimai_song:
-                    song['version'] = maimai_song.version
-        
-        for song in new_songs:
-            if 'version' not in song or not song['version']:
-                # Try to get version from database
-                maimai_song = MaimaiSong.objects.filter(title=song['song_name']).first()
-                if maimai_song:
-                    song['version'] = maimai_song.version
-        
-        # Convert to JSON-serializable format
-        b50_data = {
-            'export_info': {
-                'version': '1.0',
-                'export_date': '2026-04-08',
-                'total_songs': len(old_songs) + len(new_songs)
-            },
-            'old_songs': old_songs,
-            'new_songs': new_songs
-        }
-        
-        # Create JSON response for download
-        response = HttpResponse(
-            json.dumps(b50_data, indent=2),
-            content_type='application/json'
-        )
-        response['Content-Disposition'] = 'attachment; filename="maimai_b50_data.json"'
-        return response
+        try:
+            # Receive B50 data from frontend localStorage
+            data = json.loads(request.body)
+            old_songs = data.get('old_songs', [])
+            new_songs = data.get('new_songs', [])
+            
+            # Validate that we have some data to export
+            if not old_songs and not new_songs:
+                return JsonResponse({'status': 'error', 'message': 'No B50 data to export. Add some songs first!'})
+            
+            # Ensure version information is included for all songs
+            all_song_arrays = [old_songs, new_songs]
+            for song_array in all_song_arrays:
+                for song in song_array:
+                    if 'version' not in song or not song['version']:
+                        # Try to get version from database
+                        try:
+                            maimai_song = MaimaiSong.objects.filter(title=song.get('song_name', '')).first()
+                            if maimai_song and maimai_song.version:
+                                song['version'] = maimai_song.version
+                            else:
+                                # Set a default version if not found in database
+                                # Assume old chart if unknown (safer default)
+                                song['version'] = 'unknown'
+                        except Exception as e:
+                            # If database query fails, set default version
+                            song['version'] = 'unknown'
+            
+            # Convert to JSON-serializable format
+            b50_data = {
+                'export_info': {
+                    'version': '2.0',  # Updated version to reflect improved export
+                    'export_date': '2026-04-08',
+                    'total_songs': len(old_songs) + len(new_songs),
+                    'note': 'Version information preserved for accurate re-import'
+                },
+                'old_songs': old_songs,
+                'new_songs': new_songs
+            }
+            
+            # Create JSON response for download
+            response = HttpResponse(
+                json.dumps(b50_data, indent=2),
+                content_type='application/octet-stream'
+            )
+            response['Content-Disposition'] = 'attachment; filename="maimai_b50_data.json"'
+            return response
+            
+        except json.JSONDecodeError:
+            return JsonResponse({'status': 'error', 'message': 'Invalid JSON data received from client.'})
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': f'Error creating export file: {str(e)}'})
     
     return JsonResponse({'status': 'error', 'message': 'Invalid request method.'})
 
