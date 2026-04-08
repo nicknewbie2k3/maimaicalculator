@@ -12,5 +12,9 @@ urlpatterns = [
     path('chart-database/get-aliases/<int:song_id>/', views.get_song_aliases, name='get_song_aliases'),
     path('save-b50/', views.save_b50_data, name='save_b50_data'),
     path('load-b50/', views.load_b50_data, name='load_b50_data'),
+    path('load-astro-cache/', views.load_astro_cache_data, name='load_astro_cache_data'),
+    path('download-decompressed-cache/', views.download_decompressed_cache, name='download_decompressed_cache'),
+    path('convert-cache-to-b50/', views.convert_cache_to_b50, name='convert_cache_to_b50'),
+    path('download-converted-b50/', views.download_converted_b50, name='download_converted_b50'),
     path('clear-b50/', views.clear_b50_data, name='clear_b50_data'),
 ]

@@ -1,4 +1,7 @@
 import json
+import zlib
+import gzip
+import bz2
 from decimal import Decimal, InvalidOperation, ROUND_DOWN
 from datetime import datetime
 from django.shortcuts import render, redirect
@@ -296,6 +299,269 @@ def load_b50_data(request):
     
     return JsonResponse({'status': 'error', 'message': 'No file uploaded or invalid request method.'})
 
+def load_astro_cache_data(request):
+    """Load and decompress astro cache data from uploaded compressed file."""
+    if request.method == 'POST' and request.FILES.get('astro_cache_file'):
+        try:
+            cache_file = request.FILES['astro_cache_file']
+            
+            # Read the raw file content
+            compressed_content = cache_file.read()
+            
+            # Try different decompression methods
+            decompressed_content = None
+            compression_method = None
+            
+            # First, try to parse as uncompressed JSON
+            try:
+                decompressed_text = compressed_content.decode('utf-8')
+                json.loads(decompressed_text)  # Validate it's JSON
+                compression_method = "uncompressed"
+                decompressed_content = decompressed_text
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                pass
+            
+            # If not JSON, try different decompression methods
+            if decompressed_content is None:
+                compression_methods = [
+                    ("gzip", lambda x: gzip.decompress(x)),
+                    ("deflate", lambda x: zlib.decompress(x)),
+                    ("deflate_raw", lambda x: zlib.decompress(x, -zlib.MAX_WBITS)),
+                    ("bzip2", lambda x: bz2.decompress(x)),
+                    ("deflate_auto", lambda x: zlib.decompress(x, 16 + zlib.MAX_WBITS)),
+                ]
+                
+                for method_name, decompress_func in compression_methods:
+                    try:
+                        decompressed_bytes = decompress_func(compressed_content)
+                        decompressed_text = decompressed_bytes.decode('utf-8')
+                        json.loads(decompressed_text)  # Validate it's JSON
+                        compression_method = method_name
+                        decompressed_content = decompressed_text
+                        break
+                    except Exception:
+                        continue
+            
+            if decompressed_content is None:
+                # Try to detect if it might be a different encoding or format
+                try:
+                    # Try different character encodings
+                    for encoding in ['utf-8', 'utf-16', 'utf-32', 'ascii', 'latin1']:
+                        try:
+                            decoded_text = compressed_content.decode(encoding)
+                            json.loads(decoded_text)  # Validate it's JSON
+                            compression_method = f"uncompressed ({encoding})"
+                            decompressed_content = decoded_text
+                            break
+                        except (UnicodeDecodeError, json.JSONDecodeError):
+                            continue
+                    
+                    if decompressed_content is None:
+                        return JsonResponse({
+                            'status': 'error', 
+                            'message': 'Failed to decompress or decode the file. Tried multiple compression methods (gzip, deflate, bzip2) and character encodings. Please check if the file is a valid compressed JSON file.'
+                        })
+                except Exception as e:
+                    return JsonResponse({
+                        'status': 'error', 
+                        'message': f'Failed to process the file. Error: {str(e)}'
+                    })
+            
+            # Parse and reformat the JSON for proper formatting
+            try:
+                parsed_json = json.loads(decompressed_content)
+                # Format JSON with proper indentation and sorting
+                formatted_json = json.dumps(parsed_json, indent=2, ensure_ascii=False, sort_keys=True)
+            except json.JSONDecodeError as e:
+                return JsonResponse({
+                    'status': 'error', 
+                    'message': f'Decompressed content is not valid JSON: {str(e)}'
+                })
+            
+            # Store the formatted JSON in session for download
+            request.session['decompressed_cache_data'] = formatted_json
+            original_filename = cache_file.name
+            base_name = original_filename.rsplit('.', 1)[0] if '.' in original_filename else original_filename
+            request.session['decompressed_cache_filename'] = f"{base_name}_decompressed_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            
+            # Return success without any B50 conversion
+            return JsonResponse({
+                'status': 'success', 
+                'message': f'File successfully decompressed using {compression_method}! The decompressed JSON file is ready for download.',
+                'has_decompressed_file': True,
+                'compression_method': compression_method
+            })
+                
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': f'Error processing astro cache file: {str(e)}'})
+    
+    return JsonResponse({'status': 'error', 'message': 'No file uploaded or invalid request method.'})
+
+def convert_astro_cache_to_b50(cache_data):
+    """
+    Convert astro cache format to B50 format.
+    This function handles multiple possible cache data structures.
+    """
+    try:
+        converted_data = {
+            'old_songs': [],
+            'new_songs': []
+        }
+        
+        # Handle different possible cache data structures
+        songs_list = []
+        
+        # Check if it's a direct list of songs
+        if isinstance(cache_data, list):
+            songs_list = cache_data
+        # Check if it has a 'songs' key
+        elif isinstance(cache_data, dict):
+            # Try common keys that might contain the song data
+            possible_keys = ['songs', 'data', 'entries', 'records', 'results', 'items', 'music', 'charts']
+            
+            # Check if it has B50-like structure first
+            if 'old_songs' in cache_data and 'new_songs' in cache_data:
+                return {
+                    'old_songs': cache_data['old_songs'],
+                    'new_songs': cache_data['new_songs']
+                }
+            
+            # Look for song data in various possible structures
+            for key in possible_keys:
+                if key in cache_data:
+                    potential_data = cache_data[key]
+                    if isinstance(potential_data, list):
+                        songs_list = potential_data
+                        break
+                    elif isinstance(potential_data, dict):
+                        # Maybe the songs are nested deeper
+                        for nested_key in possible_keys:
+                            if nested_key in potential_data and isinstance(potential_data[nested_key], list):
+                                songs_list = potential_data[nested_key]
+                                break
+                        if songs_list:
+                            break
+            
+            # If we still haven't found song data, try to find it in the root level
+            if not songs_list:
+                # Look for any list that might contain song dictionaries
+                for value in cache_data.values():
+                    if isinstance(value, list) and value:
+                        # Check if first item looks like song data
+                        first_item = value[0] if isinstance(value[0], dict) else None
+                        if first_item and any(key in first_item for key in ['song_name', 'title', 'name', 'music', 'chart']):
+                            songs_list = value
+                            break
+        
+        # Process each song in the list
+        processed_count = 0
+        for song in songs_list:
+            if not isinstance(song, dict):
+                continue
+                
+            # Try to extract song information from various possible key names
+            song_name = None
+            for name_key in ['song_name', 'title', 'name', 'songName', 'chart_name', 'music_name', 'track_name']:
+                if name_key in song:
+                    song_name = song[name_key]
+                    break
+            
+            difficulty_type = None
+            for diff_key in ['difficulty_type', 'difficulty', 'difficultyType', 'level_label', 'diff', 'chart_type']:
+                if diff_key in song:
+                    difficulty_type = song[diff_key]
+                    break
+            
+            # Skip if essential data is missing
+            if not song_name or not difficulty_type:
+                continue
+            
+            # Extract other fields with fallbacks
+            rank = song.get('rank') or song.get('grade') or song.get('fc') or ''
+            
+            achievement = None
+            for ach_key in ['achievement', 'score', 'acc', 'accuracy', 'percent']:
+                if ach_key in song:
+                    achievement = song[ach_key]
+                    break
+            
+            chart_difficulty = None
+            for diff_key in ['chart_difficulty', 'level', 'rating', 'const', 'chart_constant']:
+                if diff_key in song:
+                    chart_difficulty = song[diff_key]
+                    break
+            
+            calculated_rating = None
+            for rating_key in ['calculated_rating', 'rating', 'ra', 'internal_rating']:
+                if rating_key in song:
+                    calculated_rating = song[rating_key]
+                    break
+            
+            version = song.get('version') or song.get('ver') or song.get('game_version') or 'unknown'
+            
+            # Convert achievement to float if it's a string
+            if isinstance(achievement, str):
+                try:
+                    achievement = float(achievement)
+                except (ValueError, TypeError):
+                    achievement = 0.0
+            
+            # Convert achievement percentage to 0-101 scale if it seems to be in 0-1 range
+            if isinstance(achievement, (int, float)) and achievement <= 1.0 and achievement > 0:
+                achievement = achievement * 100
+            
+            # Convert chart_difficulty to float if it's a string
+            if isinstance(chart_difficulty, str):
+                try:
+                    chart_difficulty = float(chart_difficulty)
+                except (ValueError, TypeError):
+                    chart_difficulty = 0.0
+            
+            # Calculate rating if missing but we have the required data
+            if not calculated_rating and chart_difficulty and achievement:
+                try:
+                    # Basic rating calculation (this may need adjustment based on actual formula)
+                    calculated_rating = int(chart_difficulty * achievement / 100 * 22.4)
+                except:
+                    calculated_rating = 0
+            
+            song_data = {
+                'song_name': str(song_name),
+                'difficulty_type': str(difficulty_type),
+                'rank': str(rank),
+                'achievement': float(achievement) if achievement else 0.0,
+                'chart_difficulty': float(chart_difficulty) if chart_difficulty else 0.0,
+                'calculated_rating': int(calculated_rating) if calculated_rating else 0,
+                'version': str(version)
+            }
+            
+            # Categorize as old or new song based on version information
+            # PRiSM PLUS is the cutoff - everything before PRiSM PLUS is old, PRiSM PLUS+ is new
+            version_lower = version.lower()
+            
+            # Define specific new versions (PRiSM PLUS and onwards)
+            new_versions = [
+                'prism plus', 'circle'
+            ]
+            
+            # Check if it's explicitly a new version (PRiSM PLUS or later)
+            is_new_version = any(new_ver in version_lower for new_ver in new_versions)
+            
+            if is_new_version:
+                converted_data['new_songs'].append(song_data)
+            else:
+                # Everything else (including UNiVERSE, FESTiVAL, BUDDiES, etc.) is old
+                converted_data['old_songs'].append(song_data)
+            
+            processed_count += 1
+        
+        return converted_data
+        
+    except Exception as e:
+        # Return empty structure on conversion error
+        print(f"Conversion error: {e}")  # For debugging
+        return {'old_songs': [], 'new_songs': []}
+
 def clear_b50_data(request):
     """Clear all B50 data (handled by frontend localStorage)."""
     if request.method == 'POST':
@@ -306,6 +572,447 @@ def clear_b50_data(request):
         })
     
     return JsonResponse({'status': 'error', 'message': 'Invalid request method.'})
+
+def download_decompressed_cache(request):
+    """Download the decompressed cache file stored in session."""
+    if request.method == 'GET':
+        try:
+            decompressed_data = request.session.get('decompressed_cache_data')
+            filename = request.session.get('decompressed_cache_filename', 'decompressed_cache.json')
+            
+            if not decompressed_data:
+                return JsonResponse({'status': 'error', 'message': 'No decompressed cache data available. Please convert a cache file first.'})
+            
+            # Create JSON response for download
+            response = HttpResponse(
+                decompressed_data,
+                content_type='application/octet-stream'
+            )
+            response['Content-Disposition'] = f'attachment; filename="{filename}"'
+            
+            # Keep the session data so user can download again if needed
+            # Session data will be cleared when a new file is processed or session expires
+            
+            return response
+            
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': f'Error downloading decompressed cache: {str(e)}'})
+    
+    return JsonResponse({'status': 'error', 'message': 'Invalid request method.'})
+
+def convert_cache_to_b50(request):
+    """Convert JSON file data to B50 format."""
+    if request.method == 'POST' and request.FILES.get('json_file'):
+        try:
+            json_file = request.FILES['json_file']
+            
+            # Read and parse the JSON file
+            try:
+                file_content = json_file.read()
+                if isinstance(file_content, bytes):
+                    file_content = file_content.decode('utf-8')
+                cache_data = json.loads(file_content)
+            except json.JSONDecodeError:
+                return JsonResponse({'status': 'error', 'message': 'Invalid JSON file format.'})
+            except UnicodeDecodeError:
+                return JsonResponse({'status': 'error', 'message': 'Unable to decode file. Please ensure it\'s a valid UTF-8 encoded JSON file.'})
+            
+            # Convert cache to B50 format
+            b50_data = convert_cache_data_to_b50_format(cache_data)
+            
+            if b50_data['old_songs'] or b50_data['new_songs']:
+                # Store the B50 data in session for download
+                b50_json = json.dumps(b50_data, indent=2, ensure_ascii=False)
+                request.session['converted_b50_data'] = b50_json
+                original_filename = json_file.name
+                base_name = original_filename.rsplit('.', 1)[0] if '.' in original_filename else original_filename
+                request.session['converted_b50_filename'] = f"{base_name}_converted_b50_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+                
+                return JsonResponse({
+                    'status': 'success',
+                    'message': f'JSON file converted to B50 format successfully! Found {len(b50_data["old_songs"])} old songs and {len(b50_data["new_songs"])} new songs.',
+                    'data': b50_data,
+                    'has_b50_file': True
+                })
+            else:
+                return JsonResponse({'status': 'error', 'message': 'No valid song data found in JSON file. Please ensure the file contains level_metadata or similar song data structure.'})
+                
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': f'Error converting JSON file: {str(e)}'})
+    
+    return JsonResponse({'status': 'error', 'message': 'No JSON file uploaded or invalid request method.'})
+
+def download_converted_b50(request):
+    """Download the converted B50 file stored in session."""
+    if request.method == 'GET':
+        try:
+            b50_data = request.session.get('converted_b50_data')
+            filename = request.session.get('converted_b50_filename', 'converted_b50.json')
+            
+            if not b50_data:
+                return JsonResponse({'status': 'error', 'message': 'No converted B50 data available. Please convert a cache file first.'})
+            
+            # Create JSON response for download
+            response = HttpResponse(
+                b50_data,
+                content_type='application/octet-stream'
+            )
+            response['Content-Disposition'] = f'attachment; filename="{filename}"'
+            
+            return response
+            
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': f'Error downloading converted B50: {str(e)}'})
+    
+    return JsonResponse({'status': 'error', 'message': 'Invalid request method.'})
+
+def convert_cache_data_to_b50_format(cache_data):
+    """Convert AstroDX cache data structure to B50 format."""
+    try:
+        b50_data = {
+            'export_info': {
+                'version': '2.0',
+                'export_date': datetime.now().strftime('%Y-%m-%d'),
+                'total_songs': 0,
+                'note': 'Converted from AstroDX cache file'
+            },
+            'old_songs': [],
+            'new_songs': []
+        }
+        
+        # Extract level_metadata from cache
+        level_metadata = cache_data.get('level_metadata', {})
+        
+        if not level_metadata:
+            print("No level_metadata found in cache data")
+            return b50_data
+        
+        # Preprocess song names to handle chart type disambiguation
+        # Collect all song titles and group by base name
+        song_titles_by_base = {}
+        for song_key, song_data in level_metadata.items():
+            if not isinstance(song_data, dict):
+                continue
+            
+            song_name = song_data.get('title', song_key).strip()
+            clean_song_name = song_name.replace('\r\n', '').replace('\n', '').strip()
+            
+            if not clean_song_name:
+                continue
+            
+            # Extract base name (remove [DX] or [ST] tags)
+            base_name = clean_song_name
+            chart_type = None
+            
+            if clean_song_name.endswith(' [DX]'):
+                base_name = clean_song_name[:-5]  # Remove ' [DX]'
+                chart_type = 'DX'
+            elif clean_song_name.endswith(' [ST]'):
+                base_name = clean_song_name[:-5]  # Remove ' [ST]'
+                chart_type = 'ST'
+            
+            if base_name not in song_titles_by_base:
+                song_titles_by_base[base_name] = []
+            
+            song_titles_by_base[base_name].append({
+                'song_key': song_key,
+                'original_name': clean_song_name,
+                'chart_type': chart_type
+            })
+        
+        # Process each group to add missing chart type tags
+        for base_name, songs in song_titles_by_base.items():
+            if len(songs) == 2:  # Only process if there are exactly 2 songs with same base name
+                song1, song2 = songs
+                
+                # Case 1: One has [DX], one doesn't - add [ST] to the one without
+                if (song1['chart_type'] == 'DX' and song2['chart_type'] is None):
+                    new_name = f"{base_name} [ST]"
+                    level_metadata[song2['song_key']]['title'] = new_name
+                    print(f"Added [ST] tag: {song2['original_name']} -> {new_name}")
+                elif (song2['chart_type'] == 'DX' and song1['chart_type'] is None):
+                    new_name = f"{base_name} [ST]"
+                    level_metadata[song1['song_key']]['title'] = new_name
+                    print(f"Added [ST] tag: {song1['original_name']} -> {new_name}")
+                
+                # Case 2: One has [ST], one doesn't - add [DX] to the one without  
+                elif (song1['chart_type'] == 'ST' and song2['chart_type'] is None):
+                    new_name = f"{base_name} [DX]"
+                    level_metadata[song2['song_key']]['title'] = new_name
+                    print(f"Added [DX] tag: {song2['original_name']} -> {new_name}")
+                elif (song2['chart_type'] == 'ST' and song1['chart_type'] is None):
+                    new_name = f"{base_name} [DX]"
+                    level_metadata[song1['song_key']]['title'] = new_name
+                    print(f"Added [DX] tag: {song1['original_name']} -> {new_name}")
+        
+        for song_key, song_data in level_metadata.items():
+            if not isinstance(song_data, dict):
+                continue
+                
+            # Use the title from song_data, fallback to song_key
+            song_name = song_data.get('title', song_key).strip()
+            
+            # Clean up song name (remove extra whitespace/newlines)
+            clean_song_name = song_name.replace('\r\n', '').replace('\n', '').strip()
+            if not clean_song_name:
+                continue
+            
+            # Get difficulties array (this is the correct structure for AstroDX)
+            difficulties_array = song_data.get('difficulties', [])
+            if not isinstance(difficulties_array, list):
+                continue
+            
+            # Process each difficulty in the array
+            for difficulty_obj in difficulties_array:
+                if not isinstance(difficulty_obj, dict):
+                    continue
+                
+                # Extract difficulty info
+                difficulty_alias = difficulty_obj.get('alias', '')
+                stats = difficulty_obj.get('stats', {})
+                
+                if not isinstance(stats, dict):
+                    continue
+                
+                # Extract achievement rate from stats
+                achievement_rate = stats.get('achievementRate', 0)
+                
+                # Skip songs without play data (achievementRate = 0)
+                if achievement_rate == 0:
+                    continue
+                
+                # Search for song in database using the same method as the main project
+                song_db = None
+                
+                # First try exact match
+                try:
+                    song_db = MaimaiSong.objects.get(title=clean_song_name)
+                except MaimaiSong.DoesNotExist:
+                    # Try matching with [DX] and [ST] tags
+                    possible_matches = MaimaiSong.objects.filter(
+                        Q(title=f"{clean_song_name} [DX]") | 
+                        Q(title=f"{clean_song_name} [ST]")
+                    )
+                    
+                    if possible_matches.exists():
+                        song_db = possible_matches.first()
+                        print(f'Note: Matched "{clean_song_name}" to "{song_db.title}"')
+                
+                # If still not found, try case-insensitive exact match
+                if not song_db:
+                    song_db = MaimaiSong.objects.filter(title__iexact=clean_song_name).first()
+                
+                # If still not found, try checking aliases
+                if not song_db:
+                    # Search in songs that have aliases containing this song name
+                    songs_with_aliases = MaimaiSong.objects.filter(aliases__isnull=False)
+                    for song in songs_with_aliases:
+                        aliases_list = song.get_aliases_list()
+                        if any(clean_song_name.lower() == alias.lower() for alias in aliases_list):
+                            song_db = song
+                            break
+                
+                # If still not found, try partial match in aliases
+                if not song_db:
+                    songs_with_aliases = MaimaiSong.objects.filter(aliases__isnull=False)
+                    for song in songs_with_aliases:
+                        aliases_list = song.get_aliases_list()
+                        if any(clean_song_name.lower() in alias.lower() for alias in aliases_list):
+                            song_db = song
+                            break
+                
+                # Final fallback: partial match in title
+                if not song_db:
+                    song_db = MaimaiSong.objects.filter(title__icontains=clean_song_name).first()
+                
+                # Skip if we can't find the song in database
+                if not song_db:
+                    print(f"Song not found in database: {clean_song_name}")
+                    continue
+                
+                # Map difficulty alias to database field and get chart difficulty
+                chart_difficulty = None
+                difficulty_type_mapped = difficulty_alias
+                
+                if difficulty_alias.lower() in ['basic', 'bas', 'bsc']:
+                    chart_difficulty = song_db.lev_bas
+                    difficulty_type_mapped = 'Basic'
+                elif difficulty_alias.lower() in ['advanced', 'adv']:
+                    chart_difficulty = song_db.lev_adv
+                    difficulty_type_mapped = 'Advanced'
+                elif difficulty_alias.lower() in ['expert', 'exp']:
+                    chart_difficulty = song_db.lev_exp
+                    difficulty_type_mapped = 'Expert'
+                elif difficulty_alias.lower() in ['master', 'mas']:
+                    chart_difficulty = song_db.lev_mas
+                    difficulty_type_mapped = 'Master'
+                elif difficulty_alias.lower() in ['remaster', 'remas', 're:master']:
+                    chart_difficulty = song_db.lev_remas
+                    difficulty_type_mapped = 'Re:Master'
+                
+                # Skip if we don't have chart difficulty or it wasn't found
+                if not chart_difficulty:
+                    print(f"Chart difficulty not found for {clean_song_name} - {difficulty_alias}")
+                    continue
+                
+                chart_difficulty = float(chart_difficulty)
+                
+                
+                # Calculate rank based on achievement using the same system as the main calculator
+                rank = ""
+                achievement_decimal = Decimal(str(achievement_rate))
+                if Decimal('60') <= achievement_decimal < Decimal('70'):
+                    rank = 'B'
+                elif Decimal('70') <= achievement_decimal < Decimal('75'):
+                    rank = '2B'
+                elif Decimal('75') <= achievement_decimal < Decimal('80'):
+                    rank = '3B'
+                elif Decimal('80') <= achievement_decimal < Decimal('90'):
+                    rank = 'A'
+                elif Decimal('90') <= achievement_decimal < Decimal('94'):
+                    rank = '2A'
+                elif Decimal('94') <= achievement_decimal < Decimal('97'):
+                    rank = '3A'
+                elif Decimal('97') <= achievement_decimal < Decimal('98'):
+                    rank = 'S'
+                elif Decimal('98') <= achievement_decimal < Decimal('99'):
+                    rank = 'S+'
+                elif Decimal('99') <= achievement_decimal < Decimal('99.5'):
+                    rank = '2S'
+                elif Decimal('99.5') <= achievement_decimal < Decimal('100'):
+                    rank = '2S+'
+                elif Decimal('100') <= achievement_decimal < Decimal('100.5'):
+                    rank = '3S'
+                elif achievement_decimal >= Decimal('100.5'):
+                    rank = '3S+'
+                else:
+                    rank = 'B'
+
+                # Use the same coefficient table as the main calculator
+                coefficients = {
+                    'B': Decimal('9.6'),
+                    '2B': Decimal('11.2'),
+                    '3B': Decimal('12'),
+                    'A': Decimal('13.6'),
+                    '2A': Decimal('15.2'),
+                    '3A': Decimal('16.8'),
+                    'S': Decimal('20.0'),
+                    'S+': Decimal('20.3'),
+                    '2S': Decimal('20.8'),
+                    '2S+': Decimal('21.1'),
+                    '3S': Decimal('21.6'),
+                    '3S+': Decimal('22.4'),
+                }
+                coefficient = coefficients.get(rank, Decimal('0'))
+                
+                # Cap achievement at 100.5 for calculation only (same as main calculator)
+                achievement_for_calc = achievement_decimal
+                if achievement_for_calc > Decimal('100.5'):
+                    achievement_for_calc = Decimal('100.5')
+                
+                # Calculate rating using the same method as main calculator
+                chart_difficulty_decimal = Decimal(str(chart_difficulty))
+                calculated_rating = (chart_difficulty_decimal * coefficient * achievement_for_calc / 100).to_integral_value(rounding=ROUND_DOWN)
+                
+                # Get version from database (fallback to 'Unknown' if not set)
+                version = song_db.version or 'Unknown'
+                
+                # Use the database title if it has chart type tags, otherwise use cleaned cache name
+                final_song_name = clean_song_name
+                if song_db.title and (' [DX]' in song_db.title or ' [ST]' in song_db.title):
+                    final_song_name = song_db.title
+                    print(f"Using database title with chart tag: {clean_song_name} -> {final_song_name}")
+                else:
+                    # If no chart type tag in matched database title, check if this song should have one
+                    # by looking for other variants in the database
+                    other_variants = MaimaiSong.objects.filter(
+                        Q(title=f"{clean_song_name} [DX]") | 
+                        Q(title=f"{clean_song_name} [ST]")
+                    ).exclude(id=song_db.id)
+                    
+                    if other_variants.exists():
+                        # If other chart type variants exist, determine which one this should be
+                        has_dx = other_variants.filter(title__endswith=' [DX]').exists()
+                        has_st = other_variants.filter(title__endswith=' [ST]').exists()
+                        
+                        # If there's a DX variant, this should be ST
+                        if has_dx:
+                            final_song_name = f"{clean_song_name} [ST]"
+                            print(f"Added [ST] tag due to DX variant existing: {clean_song_name} -> {final_song_name}")
+                        # If there's a ST variant, this should be DX  
+                        elif has_st:
+                            final_song_name = f"{clean_song_name} [DX]"
+                            print(f"Added [DX] tag due to ST variant existing: {clean_song_name} -> {final_song_name}")
+                    else:
+                        # Check if the found song itself has a chart_type field we can use
+                        if hasattr(song_db, 'chart_type') and song_db.chart_type:
+                            if song_db.chart_type.upper() == 'DX':
+                                final_song_name = f"{clean_song_name} [DX]"
+                                print(f"Added [DX] tag from chart_type field: {clean_song_name} -> {final_song_name}")
+                            elif song_db.chart_type.upper() in ['STD', 'ST']:
+                                final_song_name = f"{clean_song_name} [ST]"
+                                print(f"Added [ST] tag from chart_type field: {clean_song_name} -> {final_song_name}")
+                
+                # Create song entry
+                song_entry = {
+                    'song_name': final_song_name,
+                    'difficulty_type': difficulty_type_mapped,
+                    'rank': rank,
+                    'achievement': float(achievement_rate),
+                    'chart_difficulty': float(chart_difficulty),
+                    'calculated_rating': int(calculated_rating),
+                    'version': version
+                }
+                
+                # Categorize as old or new song based on version
+                # PRiSM PLUS is the cutoff - everything before PRiSM PLUS is old, PRiSM PLUS+ is new
+                version_lower = version.lower()
+                
+                # Define specific new versions (PRiSM PLUS and onwards)
+                new_versions = [
+                    'prism plus', 'circle'
+                ]
+                
+                # Check if it's explicitly a new version (PRiSM PLUS or later)
+                is_new_version = any(new_ver in version_lower for new_ver in new_versions)
+                
+                if is_new_version:
+                    b50_data['new_songs'].append(song_entry)
+                else:
+                    # Everything else (including UNiVERSE, FESTiVAL, BUDDiES, etc.) is old
+                    b50_data['old_songs'].append(song_entry)
+        
+        # Sort by rating (highest first), then by achievement for ties, and limit to top 35 old + 15 new
+        b50_data['old_songs'].sort(key=lambda x: (x['calculated_rating'], x['achievement']), reverse=True)
+        b50_data['new_songs'].sort(key=lambda x: (x['calculated_rating'], x['achievement']), reverse=True)
+        
+        b50_data['old_songs'] = b50_data['old_songs'][:35]
+        b50_data['new_songs'] = b50_data['new_songs'][:15]
+        
+        # Post-process song names to ensure proper [STD] and [DX] tags in final output
+        def format_output_tags(songs_list):
+            for song in songs_list:
+                song_name = song['song_name']
+                # Convert [ST] tags back to [STD] for output
+                if song_name.endswith(' [ST]'):
+                    song['song_name'] = song_name[:-5] + ' [STD]'
+                # Ensure [DX] tags remain as [DX]
+                # (no change needed for [DX] tags)
+        
+        format_output_tags(b50_data['old_songs'])
+        format_output_tags(b50_data['new_songs'])
+        
+        b50_data['export_info']['total_songs'] = len(b50_data['old_songs']) + len(b50_data['new_songs'])
+        
+        print(f"Converted cache data: {len(b50_data['old_songs'])} old songs, {len(b50_data['new_songs'])} new songs")
+        
+        return b50_data
+        
+    except Exception as e:
+        print(f"Error converting cache data: {e}")
+        import traceback
+        traceback.print_exc()
+        return {'old_songs': [], 'new_songs': [], 'export_info': {'version': '2.0', 'export_date': datetime.now().strftime('%Y-%m-%d'), 'total_songs': 0, 'note': f'Conversion failed: {str(e)}'}}
 
 def chart_database(request):
     songs_qs = MaimaiSong.objects.all()
@@ -592,10 +1299,10 @@ def alias_upload(request):
                 try:
                     song = MaimaiSong.objects.get(title=chart_name)
                 except MaimaiSong.DoesNotExist:
-                    # Try matching with [DX] and [STD] tags
+                    # Try matching with [DX] and [ST] tags
                     possible_matches = MaimaiSong.objects.filter(
                         Q(title=f"{chart_name} [DX]") | 
-                        Q(title=f"{chart_name} [STD]")
+                        Q(title=f"{chart_name} [ST]")
                     )
                     
                     if possible_matches.exists():
@@ -636,7 +1343,7 @@ def alias_upload(request):
                             continue  # Skip the single song processing below
                 
                 if not song:
-                    results.append(f'Entry {i+1}: Song "{chart_name}" not found in database (tried exact match and [DX]/[STD] variants)')
+                    results.append(f'Entry {i+1}: Song "{chart_name}" not found in database (tried exact match and [DX]/[ST] variants)')
                     continue
                 
                 # Get existing aliases
