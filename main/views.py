@@ -194,8 +194,13 @@ def database_upload(request):
                         obj.save()
                 
                 # Handle aliases separately (whether created or updated)
-                aliases = entry.get('aliases', [])
-                if aliases:
+                # Always process aliases to ensure they're updated/cleared properly
+                # Support both 'alias' and 'aliases' keys for flexibility
+                aliases = entry.get('aliases', entry.get('alias', []))
+                current_aliases = obj.get_aliases_list()
+                
+                # Update aliases if they're different
+                if aliases != current_aliases:
                     obj.set_aliases_list(aliases)
                     obj.save()
             # Remove songs not in the uploaded file
