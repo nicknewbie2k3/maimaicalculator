@@ -4,6 +4,7 @@ from datetime import datetime
 from django.shortcuts import render, redirect
 from django.core.paginator import Paginator
 from django.http import HttpResponse, JsonResponse
+from django.db.models import Q
 from .models import OldSong, NewSong, MaimaiSong
 
 def parse_decimal(val):
@@ -121,9 +122,24 @@ def calculator_list(request):
             return JsonResponse({'status': 'error', 'message': f'Server error: {str(e)}'})
 
     # Return empty data - frontend will populate from localStorage
-    all_song_names = MaimaiSong.objects.values_list('title', flat=True).distinct()
+    all_song_names = list(MaimaiSong.objects.values_list('title', flat=True).distinct())
     maimai_songs = MaimaiSong.objects.all()
     maimai_songs_dict = {song.title: song for song in maimai_songs}
+    
+    # Add aliases to song names for search
+    alias_to_title_map = {}
+    all_songs = MaimaiSong.objects.exclude(aliases__isnull=True).exclude(aliases__exact='')
+    for song in all_songs:
+        aliases_list = song.get_aliases_list()
+        for alias in aliases_list:
+            if alias.strip():  # Only add non-empty aliases
+                alias_to_title_map[alias] = song.title
+                # Add original title to list if not already there
+                if song.title not in all_song_names:
+                    all_song_names.append(song.title)
+    
+    # Sort the song names
+    all_song_names = sorted(all_song_names)
     
     return render(request, "main/calculator_list.html", {
         "old_songs": [],
@@ -135,6 +151,7 @@ def calculator_list(request):
         "total_average_rating": 0,
         "all_song_names": all_song_names,
         "maimai_songs_dict": maimai_songs_dict,
+        "alias_to_title_map": alias_to_title_map,
     })
 
 def database_upload(request):
@@ -296,7 +313,10 @@ def chart_database(request):
     difficulty = request.GET.get('difficulty', '').strip()
 
     if title:
-        songs_qs = songs_qs.filter(title__icontains=title)
+        # Search both in title and aliases
+        songs_qs = songs_qs.filter(
+            Q(title__icontains=title) | Q(aliases__icontains=title)
+        )
     if version:
         songs_qs = songs_qs.filter(version__icontains=version)
     if artist:
@@ -325,7 +345,23 @@ def chart_database(request):
     songs = paginator.get_page(page_number)
 
     # Unique values for dropdowns
-    filter_titles = MaimaiSong.objects.values_list('title', flat=True).distinct().order_by('title')
+    filter_titles = list(MaimaiSong.objects.values_list('title', flat=True).distinct().order_by('title'))
+    
+    # Add aliases mapped to song titles for the dropdown
+    alias_to_title_map = {}
+    all_songs = MaimaiSong.objects.exclude(aliases__isnull=True).exclude(aliases__exact='')
+    for song in all_songs:
+        aliases_list = song.get_aliases_list()
+        for alias in aliases_list:
+            if alias.strip():  # Only add non-empty aliases
+                alias_to_title_map[alias] = song.title
+                # Add original title to filter list if not already there
+                if song.title not in filter_titles:
+                    filter_titles.append(song.title)
+    
+    # Sort the titles
+    filter_titles = sorted(filter_titles)
+    
     filter_versions = MaimaiSong.objects.values_list('version', flat=True).distinct().order_by('version')
     filter_artists = MaimaiSong.objects.values_list('artist', flat=True).distinct().order_by('artist')
     # Catcode: fixed 7 options
@@ -345,6 +381,7 @@ def chart_database(request):
         "filter_versions": filter_versions,
         "filter_artists": filter_artists,
         "filter_catcodes": filter_catcodes,
+        "alias_to_title_map": alias_to_title_map,
     })
 
 def download_chart_database(request):

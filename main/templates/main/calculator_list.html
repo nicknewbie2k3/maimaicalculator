@@ -196,7 +196,7 @@
         <label for="song_name" class="col-form-label">Song Name:</label>
       </div>
       <div class="col-auto position-relative" style="min-width:250px;">
-        <input type="text" id="song_name" name="song_name" maxlength="100" required autocomplete="off" class="form-control" oninput="showDropdown()">
+        <input type="text" id="song_name" name="song_name" maxlength="100" required autocomplete="off" class="form-control" oninput="showDropdown()" placeholder="Song Name or Alias">
         <div id="songDropdown" class="dropdown-menu" style="display:none; max-height:200px; overflow-y:auto; width:100%;"></div>
       </div>
       <div class="col-auto">
@@ -221,6 +221,13 @@
         <button type="submit" class="btn btn-primary" onclick="return addSongToLocalStorage(event)">Add</button>
       </div>
     </form>
+    
+    <div class="mb-3">
+      <small class="text-muted">
+        <i class="fas fa-info-circle"></i>
+        If you want to add an alias to a song, consider clicking Chart Database and add it! This is exclusively a community feature.
+      </small>
+    </div>
     <script>
       // List of all song names from the database (passed from Django)
       const allSongNames = [
@@ -228,6 +235,64 @@
           "{{ song|escapejs }}"{% if not forloop.last %},{% endif %}
         {% endfor %}
       ];
+
+      // Alias to title mapping
+      const aliasToTitleMap = {
+        {% for alias, title in alias_to_title_map.items %}"{{ alias|escapejs }}": "{{ title|escapejs }}"{% if not forloop.last %},{% endif %}{% endfor %}
+      };
+
+      // Calculate similarity percentage between two strings
+      function calculateSimilarity(str1, str2) {
+        const s1 = str1.toLowerCase();
+        const s2 = str2.toLowerCase();
+        
+        if (s1 === s2) return 100;
+        if (s1.length === 0 || s2.length === 0) return 0;
+        
+        // Calculate character overlap
+        const chars1 = {};
+        const chars2 = {};
+        
+        for (let char of s1) {
+          chars1[char] = (chars1[char] || 0) + 1;
+        }
+        
+        for (let char of s2) {
+          chars2[char] = (chars2[char] || 0) + 1;
+        }
+        
+        let commonChars = 0;
+        for (let char in chars1) {
+          if (chars2[char]) {
+            commonChars += Math.min(chars1[char], chars2[char]);
+          }
+        }
+        
+        // Calculate position bonus (characters in correct positions)
+        let positionBonus = 0;
+        const minLength = Math.min(s1.length, s2.length);
+        for (let i = 0; i < minLength; i++) {
+          if (s1[i] === s2[i]) {
+            positionBonus++;
+          }
+        }
+        
+        // Substring bonus (if one string contains the other)
+        let substringBonus = 0;
+        if (s1.includes(s2) || s2.includes(s1)) {
+          substringBonus = Math.min(s1.length, s2.length) * 0.3;
+        }
+        
+        // Calculate final similarity (weighted average)
+        const totalChars = Math.max(s1.length, s2.length);
+        const charSimilarity = (commonChars / totalChars) * 100;
+        const positionSimilarity = (positionBonus / minLength) * 100;
+        
+        // Weighted combination: character overlap (70%) + position bonus (20%) + substring bonus (10%)
+        const similarity = (charSimilarity * 0.7) + (positionSimilarity * 0.2) + (substringBonus / totalChars * 100 * 0.1);
+        
+        return Math.round(similarity);
+      }
 
       const input = document.getElementById('song_name');
       const dropdown = document.getElementById('songDropdown');
@@ -239,18 +304,103 @@
           dropdown.style.display = 'none';
           return;
         }
-        const matches = allSongNames.filter(name => name.toLowerCase().includes(value));
+
+        let matches = [];
+        
+        // First check exact matches (contains search term)
+        const exactAliasMatches = Object.keys(aliasToTitleMap).filter(alias => 
+          alias.toLowerCase().includes(value)
+        );
+        
+        // Add exact alias matches
+        exactAliasMatches.forEach(alias => {
+          const originalTitle = aliasToTitleMap[alias];
+          if (!matches.find(m => m.value === originalTitle)) {
+            matches.push({
+              display: originalTitle,
+              value: originalTitle,
+              similarity: 100, // Exact matches get 100%
+              type: 'exact'
+            });
+          }
+        });
+        
+        // Add exact title matches
+        const exactTitleMatches = allSongNames.filter(name => 
+          name.toLowerCase().includes(value) && 
+          !matches.find(m => m.value === name)
+        );
+        exactTitleMatches.forEach(name => {
+          matches.push({
+            display: name,
+            value: name,
+            similarity: 100,
+            type: 'exact'
+          });
+        });
+        
+        // If we have few exact matches, add fuzzy matches
+        if (matches.length < 5) {
+          // Calculate similarity for all aliases
+          Object.keys(aliasToTitleMap).forEach(alias => {
+            const originalTitle = aliasToTitleMap[alias];
+            if (!matches.find(m => m.value === originalTitle)) {
+              const similarity = calculateSimilarity(value, alias.toLowerCase());
+              if (similarity >= 30) { // Minimum threshold
+                matches.push({
+                  display: originalTitle,
+                  value: originalTitle,
+                  similarity: similarity,
+                  type: 'fuzzy'
+                });
+              }
+            }
+          });
+          
+          // Calculate similarity for all titles
+          allSongNames.forEach(name => {
+            if (!matches.find(m => m.value === name)) {
+              const similarity = calculateSimilarity(value, name.toLowerCase());
+              if (similarity >= 30) { // Minimum threshold
+                matches.push({
+                  display: name,
+                  value: name,
+                  similarity: similarity,
+                  type: 'fuzzy'
+                });
+              }
+            }
+          });
+        }
+        
+        // Sort by similarity (exact matches first, then by similarity percentage)
+        matches.sort((a, b) => {
+          if (a.type === 'exact' && b.type === 'fuzzy') return -1;
+          if (a.type === 'fuzzy' && b.type === 'exact') return 1;
+          return b.similarity - a.similarity;
+        });
+        
+        // Limit to top 10 results for performance
+        matches = matches.slice(0, 10);
+        
         if (matches.length === 0) {
           dropdown.style.display = 'none';
           return;
         }
-        matches.forEach(name => {
+        
+        matches.forEach(match => {
           const option = document.createElement('button');
           option.type = 'button';
           option.className = 'dropdown-item';
-          option.textContent = name;
+          // Add similarity indicator for fuzzy matches
+          if (match.type === 'fuzzy' && match.similarity < 100) {
+            option.innerHTML = `${match.display} <small class="text-muted">(${match.similarity}% match)</small>`;
+          } else {
+            option.textContent = match.display;
+          }
+          
           option.onclick = function() {
-            input.value = name;
+            input.value = match.value;
             dropdown.style.display = 'none';
           };
           dropdown.appendChild(option);
