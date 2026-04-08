@@ -1,5 +1,6 @@
 import json
 from decimal import Decimal, InvalidOperation, ROUND_DOWN
+from datetime import datetime
 from django.shortcuts import render, redirect
 from django.core.paginator import Paginator
 from django.http import HttpResponse, JsonResponse
@@ -173,6 +174,12 @@ def database_upload(request):
                             changed = True
                     if changed:
                         obj.save()
+                
+                # Handle aliases separately (whether created or updated)
+                aliases = entry.get('aliases', [])
+                if aliases:
+                    obj.set_aliases_list(aliases)
+                    obj.save()
             # Remove songs not in the uploaded file
             MaimaiSong.objects.exclude(title__in=uploaded_titles).delete()
             message = f"Upload successful. {len(uploaded_titles)} songs now in the database."
@@ -339,3 +346,138 @@ def chart_database(request):
         "filter_artists": filter_artists,
         "filter_catcodes": filter_catcodes,
     })
+
+def download_chart_database(request):
+    """Export the entire chart database as JSON file for download."""
+    try:
+        # Get all songs from the database
+        songs = MaimaiSong.objects.all()
+        
+        # Convert to list of dictionaries
+        songs_data = []
+        for song in songs:
+            song_dict = {
+                'title': song.title,
+                'title_kana': song.title_kana,
+                'artist': song.artist,
+                'catcode': song.catcode,
+                'image_url': song.image_url,
+                'release': song.release,
+                'lev_bas': str(song.lev_bas) if song.lev_bas else None,
+                'lev_adv': str(song.lev_adv) if song.lev_adv else None,
+                'lev_exp': str(song.lev_exp) if song.lev_exp else None,
+                'lev_mas': str(song.lev_mas) if song.lev_mas else None,
+                'lev_remas': str(song.lev_remas) if song.lev_remas else None,
+                'sort': song.sort,
+                'version': song.version,
+                'chart_type': song.chart_type,
+                'aliases': song.get_aliases_list()  # Include aliases in download
+            }
+            songs_data.append(song_dict)
+        
+        # Create the export data structure
+        export_data = {
+            'export_info': {
+                'version': '1.0',
+                'export_date': datetime.now().strftime('%Y-%m-%d'),
+                'total_songs': len(songs_data),
+                'note': 'Complete maimai chart database export'
+            },
+            'songs': songs_data
+        }
+        
+        # Create JSON response for download
+        current_date = datetime.now().strftime('%Y%m%d')
+        response = HttpResponse(
+            json.dumps(export_data, indent=2, ensure_ascii=False),
+            content_type='application/octet-stream'
+        )
+        response['Content-Disposition'] = f'attachment; filename="maimai_chart_database_{current_date}.json"'
+        return response
+        
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': f'Error exporting database: {str(e)}'})
+
+def add_alias(request):
+    """Add an alias to a song."""
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            song_id = data.get('song_id')
+            alias = data.get('alias', '').strip()
+            
+            if not song_id or not alias:
+                return JsonResponse({'status': 'error', 'message': 'Song ID and alias are required'})
+            
+            song = MaimaiSong.objects.get(id=song_id)
+            aliases_list = song.get_aliases_list()
+            
+            # Check if alias already exists (case insensitive)
+            if alias.lower() in [a.lower() for a in aliases_list]:
+                return JsonResponse({'status': 'error', 'message': 'Alias already exists'})
+            
+            aliases_list.append(alias)
+            song.set_aliases_list(aliases_list)
+            song.save()
+            
+            return JsonResponse({
+                'status': 'success', 
+                'message': 'Alias added successfully',
+                'aliases': aliases_list
+            })
+            
+        except MaimaiSong.DoesNotExist:
+            return JsonResponse({'status': 'error', 'message': 'Song not found'})
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': f'Error adding alias: {str(e)}'})
+    
+    return JsonResponse({'status': 'error', 'message': 'Invalid request method'})
+
+def remove_alias(request):
+    """Remove an alias from a song."""
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            song_id = data.get('song_id')
+            alias = data.get('alias', '').strip()
+            
+            if not song_id or not alias:
+                return JsonResponse({'status': 'error', 'message': 'Song ID and alias are required'})
+            
+            song = MaimaiSong.objects.get(id=song_id)
+            aliases_list = song.get_aliases_list()
+            
+            # Remove alias (case insensitive)
+            aliases_list = [a for a in aliases_list if a.lower() != alias.lower()]
+            song.set_aliases_list(aliases_list)
+            song.save()
+            
+            return JsonResponse({
+                'status': 'success', 
+                'message': 'Alias removed successfully',
+                'aliases': aliases_list
+            })
+            
+        except MaimaiSong.DoesNotExist:
+            return JsonResponse({'status': 'error', 'message': 'Song not found'})
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': f'Error removing alias: {str(e)}'})
+    
+    return JsonResponse({'status': 'error', 'message': 'Invalid request method'})
+
+def get_song_aliases(request, song_id):
+    """Get aliases for a specific song."""
+    try:
+        song = MaimaiSong.objects.get(id=song_id)
+        aliases = song.get_aliases_list()
+        
+        return JsonResponse({
+            'status': 'success',
+            'aliases': aliases,
+            'song_title': song.title
+        })
+        
+    except MaimaiSong.DoesNotExist:
+        return JsonResponse({'status': 'error', 'message': 'Song not found'})
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': f'Error getting aliases: {str(e)}'})
