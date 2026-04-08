@@ -136,6 +136,23 @@
       text-shadow: 1px 1px 4px #000, 0 0 2px #000;
       font-weight: normal; /* Remove bold */
     }
+    
+    /* Visual distinction for old vs new charts */
+    .old-chart {
+      border-left: 4px solid #007bff !important; /* Blue border for old charts */
+    }
+    
+    .new-chart {
+      border-left: 4px solid #28a745 !important; /* Green border for new charts */
+    }
+    
+    .old-chart-row {
+      background-color: rgba(0, 123, 255, 0.05) !important; /* Light blue background for old charts */
+    }
+    
+    .new-chart-row {
+      background-color: rgba(40, 167, 69, 0.05) !important; /* Light green background for new charts */
+    }
   </style>
 
   <div class="container-fluid my-4">
@@ -149,9 +166,9 @@
     
     <!-- Save/Load B50 Data Buttons -->
     <div class="text-center mb-4">
-      <a href="{% url 'save_b50_data' %}" class="btn btn-success me-2">
+      <button type="button" class="btn btn-success me-2" onclick="saveB50DataToFile()">
         <i class="fas fa-download me-1"></i>Save B50 Data
-      </a>
+      </button>
       <button type="button" class="btn btn-primary me-2" onclick="document.getElementById('b50FileInput').click();">
         <i class="fas fa-upload me-1"></i>Load B50 Data
       </button>
@@ -163,6 +180,14 @@
       </button>
       <input type="file" id="b50FileInput" accept=".json" style="display: none;">
       <div id="loadStatus" class="alert mt-3" style="display: none;"></div>
+      
+      <!-- Chart Type Legend -->
+      <div class="text-center mb-3">
+        <small class="text-muted">
+          <span style="border-left: 4px solid #007bff; padding-left: 8px; margin-right: 15px;">Old Charts (PRE-PRiSM)</span>
+          <span style="border-left: 4px solid #28a745; padding-left: 8px;">New Charts (PRiSM PLUS / CiRCLE)</span>
+        </small>
+      </div>
     </div>
     
     <form method="post" class="row g-3 align-items-center mb-4 position-relative" autocomplete="off">
@@ -193,7 +218,7 @@
         <input type="number" id="achievement" name="achievement" step="0.0001" min="0" max="101" required class="form-control">
       </div>
       <div class="col-auto">
-        <button type="submit" class="btn btn-primary">Add</button>
+        <button type="submit" class="btn btn-primary" onclick="return addSongToLocalStorage(event)">Add</button>
       </div>
     </form>
     <script>
@@ -241,6 +266,369 @@
       });
     </script>
 
+    <!-- localStorage B50 Management -->
+    <script>
+      // localStorage B50 Management
+      const B50_STORAGE_KEY = 'maimai_b50_data';
+
+      // Song database for reference
+      const maimaiSongsDict = {
+        {% for song_name, song in maimai_songs_dict.items %}
+          "{{ song_name|escapejs }}": {
+            version: "{{ song.version|escapejs }}",
+            chart_type: "{{ song.chart_type|escapejs }}",
+            image_url: "{{ song.image_url|escapejs }}"
+          }{% if not forloop.last %},{% endif %}
+        {% endfor %}
+      };
+
+      // Initialize localStorage B50 data
+      function getB50Data() {
+        const data = localStorage.getItem(B50_STORAGE_KEY);
+        return data ? JSON.parse(data) : { old_songs: [], new_songs: [] };
+      }
+
+      function saveB50Data(data) {
+        localStorage.setItem(B50_STORAGE_KEY, JSON.stringify(data));
+      }
+
+      // Add song to localStorage
+      function addSongToLocalStorage(event) {
+        event.preventDefault();
+        
+        const formData = new FormData(event.target.form);
+        
+        fetch('{% url "calculator_list" %}', {
+          method: 'POST',
+          body: formData
+        })
+        .then(response => {
+          console.log('Response status:', response.status);
+          console.log('Response ok:', response.ok);
+          
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          }
+          
+          return response.json();
+        })
+        .then(data => {
+          console.log('Response data:', data);
+          
+          if (data.status === 'success') {
+            const songData = data.song_data;
+            
+            // Ensure version information is available
+            if (!songData.version) {
+              const songInfo = maimaiSongsDict[songData.song_name];
+              if (songInfo && songInfo.version) {
+                songData.version = songInfo.version;
+              }
+            }
+            
+            const b50Data = getB50Data();
+            
+            // Determine if it's old or new song based on version using the helper function
+            const isNewSong = isNewChart(songData);
+            const targetArray = isNewSong ? b50Data.new_songs : b50Data.old_songs;
+            const maxLength = isNewSong ? 15 : 35;
+            
+            // Check for existing song with same name and difficulty
+            const existingIndex = targetArray.findIndex(song => 
+              song.song_name === songData.song_name && 
+              song.difficulty_type === songData.difficulty_type
+            );
+            
+            // Remove existing if new achievement is higher, or don't add if lower
+            if (existingIndex !== -1) {
+              if (songData.achievement > targetArray[existingIndex].achievement) {
+                targetArray.splice(existingIndex, 1);
+              } else {
+                // alert(`Song already exists with higher or equal achievement (${targetArray[existingIndex].achievement}%)`);
+                return; // Don't add if achievement is not higher
+              }
+            }
+            
+            // Add new song
+            targetArray.push(songData);
+            
+            // Sort by rating (highest first) and limit length
+            targetArray.sort((a, b) => b.calculated_rating - a.calculated_rating);
+            if (targetArray.length > maxLength) {
+              targetArray.splice(maxLength);
+            }
+            
+            saveB50Data(b50Data);
+            updateDisplay();
+            
+            // Reset form
+            event.target.form.reset();
+            // alert(`Song added successfully! Rating: ${songData.calculated_rating}`);
+          } else {
+            // alert('Error adding song: ' + (data.message || 'Unknown error'));
+          }
+        })
+        .catch(error => {
+          console.error('Detailed fetch error:', error);
+          console.error('Error stack:', error.stack);
+          // alert(`Network Error: ${error.message}\n\nPlease check:\n1. Internet connection\n2. Server is running\n3. Browser console for details`);
+        });
+        
+        return false;
+      }
+
+      // Function to re-categorize imported songs based on version
+      function recategorizeB50Data(importedData) {
+        const recategorized = { old_songs: [], new_songs: [] };
+        
+        // Process old_songs - check each song's version info
+        (importedData.old_songs || []).forEach(song => {
+          const isNewSong = isNewChart(song);
+          const targetArray = isNewSong ? recategorized.new_songs : recategorized.old_songs;
+          addSongToArray(song, targetArray, isNewSong ? 15 : 35);
+        });
+        
+        // Process new_songs - check each song's version info  
+        (importedData.new_songs || []).forEach(song => {
+          const isNewSong = isNewChart(song);
+          const targetArray = isNewSong ? recategorized.new_songs : recategorized.old_songs;
+          addSongToArray(song, targetArray, isNewSong ? 15 : 35);
+        });
+        
+        // Sort and limit both arrays
+        recategorized.old_songs.sort((a, b) => b.calculated_rating - a.calculated_rating);
+        recategorized.new_songs.sort((a, b) => b.calculated_rating - a.calculated_rating);
+        recategorized.old_songs = recategorized.old_songs.slice(0, 35);
+        recategorized.new_songs = recategorized.new_songs.slice(0, 15);
+        
+        return recategorized;
+      }
+      
+      // Helper function to determine if a song is new chart
+      function isNewChart(song) {
+        // First check if version is available in song data (trust import data)
+        if (song.version) {
+          return song.version === 'PRiSM PLUS' || song.version === 'CiRCLE';
+        }
+        
+        // Fallback to database lookup only if version is missing
+        const songInfo = maimaiSongsDict[song.song_name];
+        if (songInfo && songInfo.version) {
+          // Add version to song data for future use
+          song.version = songInfo.version;
+          return songInfo.version === 'PRiSM PLUS' || songInfo.version === 'CiRCLE';
+        }
+        
+        // Default to old chart if no version info available
+        return false;
+      }
+      
+      // Helper function to add song to array with duplicate handling
+      function addSongToArray(song, targetArray, maxLength) {
+        // Check for existing song with same name and difficulty
+        const existingIndex = targetArray.findIndex(existing => 
+          existing.song_name === song.song_name && 
+          existing.difficulty_type === song.difficulty_type
+        );
+        
+        // Add or replace song
+        if (existingIndex !== -1) {
+          if (song.achievement > targetArray[existingIndex].achievement) {
+            targetArray[existingIndex] = song;
+          }
+        } else {
+          targetArray.push(song);
+        }
+      }
+
+      // Update page display with localStorage data
+      function updateDisplay() {
+        const rawB50Data = getB50Data();
+        
+        // Apply proper old/new chart categorization
+        const b50Data = recategorizeB50Data(rawB50Data);
+        
+        // Save the recategorized data back to localStorage
+        saveB50Data(b50Data);
+        
+        // Calculate ratings
+        const oldTotalRating = b50Data.old_songs.reduce((sum, song) => sum + song.calculated_rating, 0);
+        const newTotalRating = b50Data.new_songs.reduce((sum, song) => sum + song.calculated_rating, 0);
+        const totalRating = oldTotalRating + newTotalRating;
+        const totalCount = b50Data.old_songs.length + b50Data.new_songs.length;
+        const avgRating = totalCount > 0 ? Math.round(totalRating / totalCount) : 0;
+        
+        // Update rating displays
+        const totalRatingHeader = Array.from(document.querySelectorAll('h2')).find(h => h.textContent.includes('Total Rating'));
+        if (totalRatingHeader) {
+          totalRatingHeader.textContent = `Total Rating: ${totalRating}`;
+        }
+        
+        const ratingSubheader = document.querySelector('h4');
+        if (ratingSubheader) {
+          ratingSubheader.innerHTML = `
+            Old Chart Total Rating: ${oldTotalRating} &nbsp;|&nbsp;
+            New Chart Total Rating: ${newTotalRating} &nbsp;|&nbsp;
+            Total Average Rating: ${avgRating}
+          `;
+        }
+        
+        // Update both grid and table displays
+        updateGridDisplay(b50Data);
+        updateTableViews(b50Data);
+      }
+
+      function updateGridDisplay(b50Data) {
+        // Sort old and new songs separately by rating
+        const sortedOldSongs = [...b50Data.old_songs]
+          .sort((a, b) => b.calculated_rating - a.calculated_rating)
+          .slice(0, 35); // Max 35 old songs
+        const sortedNewSongs = [...b50Data.new_songs]
+          .sort((a, b) => b.calculated_rating - a.calculated_rating)
+          .slice(0, 15); // Max 15 new songs
+        
+        // Pad arrays to full capacity
+        while (sortedOldSongs.length < 35) {
+          sortedOldSongs.push(null);
+        }
+        while (sortedNewSongs.length < 15) {
+          sortedNewSongs.push(null);
+        }
+        
+        // Update grid cells
+        const gridContainer = document.getElementById('b50GridContainer');
+        const table = gridContainer.querySelector('table tbody');
+        
+        // Clear existing content
+        table.innerHTML = '';
+        
+        // Create 10 rows of 5 columns
+        for (let row = 0; row < 10; row++) {
+          const tr = document.createElement('tr');
+          for (let col = 0; col < 5; col++) {
+            const td = document.createElement('td');
+            let song = null;
+            
+            // Determine which song to display based on row position
+            if (row < 7) {
+              // Rows 0-6: Old charts (35 positions)
+              const oldSongIndex = row * 5 + col;
+              song = sortedOldSongs[oldSongIndex];
+            } else {
+              // Rows 7-9: New charts (15 positions) 
+              const newSongIndex = (row - 7) * 5 + col;
+              song = sortedNewSongs[newSongIndex];
+            }
+            
+            td.className = 'song-grid-cell' + (row === 7 ? ' border-divider-row' : '');
+            
+            if (song) {
+              const diffClass = getDifficultyClass(song.difficulty_type);
+              const chartTypeClass = isNewChart(song) ? 'new-chart' : 'old-chart';
+              td.className += ` ${diffClass} ${chartTypeClass}`;
+              td.innerHTML = createSongCellHTML(song);
+            } else {
+              td.innerHTML = '<div class="song-grid-cell-inner"></div>';
+            }
+            
+            tr.appendChild(td);
+          }
+          table.appendChild(tr);
+        }
+      }
+
+      // Function to update table views for old and new songs
+      function updateTableViews(b50Data) {
+        // Update Old Songs table
+        updateSongTable('old', b50Data.old_songs);
+        
+        // Update New Songs table  
+        updateSongTable('new', b50Data.new_songs);
+      }
+
+      // Helper function to update a specific song table
+      function updateSongTable(tableType, songs) {
+        // Find the table - old songs table is first, new songs table is second
+        const tables = document.querySelectorAll('.table-responsive .table tbody');
+        const tableIndex = tableType === 'old' ? 1 : 2; // Skip the grid table (index 0)
+        const tbody = tables[tableIndex];
+        
+        if (!tbody) return;
+        
+        tbody.innerHTML = '';
+        
+        if (songs.length === 0) {
+          const row = document.createElement('tr');
+          row.innerHTML = `<td colspan="7" class="text-center">No ${tableType} songs found.</td>`;
+          tbody.appendChild(row);
+        } else {
+          songs.forEach((song, index) => {
+            const row = document.createElement('tr');
+            const chartTypeClass = isNewChart(song) ? 'new-chart-row' : 'old-chart-row';
+            row.className = chartTypeClass;
+            
+            row.innerHTML = `
+              <td>${index + 1}</td>
+              <td>${song.song_name}</td>
+              <td>${song.difficulty_type}</td>
+              <td>${song.rank}</td>
+              <td>${parseFloat(song.achievement).toFixed(4)}%</td>
+              <td>${parseFloat(song.chart_difficulty).toFixed(1)}</td>
+              <td>${song.calculated_rating}</td>
+            `;
+            tbody.appendChild(row);
+          });
+        }
+      }
+
+      function getDifficultyClass(difficulty) {
+        const diffMap = {
+          'basic': 'diff-basic',
+          'advanced': 'diff-advanced', 
+          'expert': 'diff-expert',
+          'master': 'diff-master',
+          're:master': 'diff-remas',
+          'remaster': 'diff-remas'
+        };
+        return diffMap[difficulty.toLowerCase()] || '';
+      }
+
+      function createSongCellHTML(song) {
+        const songInfo = maimaiSongsDict[song.song_name] || {};
+        const chartTypeClass = songInfo.chart_type === 'STD' ? 'song-title-std' : 'song-title-dx';
+        
+        return `
+          <div class="song-grid-cell-inner">
+            <span class="song-title-oneline ${chartTypeClass}">${song.song_name}</span>
+            ${songInfo.image_url ? `
+              <a href="${songInfo.image_url}" target="_blank" class="song-cell-image">
+                <img src="${songInfo.image_url}" alt="Image">
+              </a>
+            ` : ''}
+            <div class="song-cell-bottom-left">
+              <span class="song-rank-bold">${song.rank}</span><br>
+              <span class="song-achievement">${parseFloat(song.achievement).toFixed(4)}%</span><br>
+              <span class="song-chart-diff-bold">${parseFloat(song.chart_difficulty).toFixed(1)}</span><br>
+            </div>
+            <div class="song-cell-bottom-right">${song.calculated_rating}</div>
+          </div>
+        `;
+      }
+
+      // Initialize display on page load
+      document.addEventListener('DOMContentLoaded', function() {
+        // Validate and fix existing localStorage data
+        const existingData = getB50Data();
+        if (existingData.old_songs.length > 0 || existingData.new_songs.length > 0) {
+          // Re-categorize existing data to fix any categorization issues
+          const fixedData = recategorizeB50Data(existingData);
+          saveB50Data(fixedData);
+        }
+        
+        updateDisplay();
+      });
+    </script>
+
     <!-- B50 Load/Save JavaScript -->
     <script>
       // Handle file upload for B50 data
@@ -264,11 +652,32 @@
         .then(response => response.json())
         .then(data => {
           if (data.status === 'success') {
+            // Re-categorize imported data based on version information
+            const originalOldCount = (data.data.old_songs || []).length;
+            const originalNewCount = (data.data.new_songs || []).length;
+            const recategorizedData = recategorizeB50Data(data.data);
+            
+            // Save to localStorage
+            saveB50Data(recategorizedData);
+            updateDisplay();
+            
+            const finalOldCount = recategorizedData.old_songs.length;
+            const finalNewCount = recategorizedData.new_songs.length;
+            
             statusDiv.className = 'alert alert-success';
-            statusDiv.textContent = data.message + ' Refreshing page...';
+            let message = data.message;
+            
+            // Show categorization results
+            if (originalOldCount !== finalOldCount || originalNewCount !== finalNewCount) {
+              message += ` Imported and re-categorized: ${finalOldCount} old songs and ${finalNewCount} new songs.`;
+            } else {
+              message += ` Imported ${finalOldCount} old songs and ${finalNewCount} new songs (no re-categorization needed).`;
+            }
+            
+            statusDiv.textContent = message;
             setTimeout(() => {
-              window.location.reload();
-            }, 1500);
+              statusDiv.style.display = 'none';
+            }, 4000);
           } else {
             statusDiv.className = 'alert alert-danger';
             statusDiv.textContent = 'Error: ' + data.message;
@@ -285,16 +694,17 @@
 
       // Function to confirm and clear B50 data
       function confirmClearB50() {
-        const confirmation = confirm(
-          'Are you sure you want to clear all B50 data?\\n\\n' +
-          'This will permanently delete all songs from your Best 50 table. ' +
-          'This action cannot be undone.\\n\\n' +
-          'Click OK to proceed or Cancel to abort.'
-        );
+        // const confirmation = confirm(
+        //   'Are you sure you want to clear all B50 data?\\n\\n' +
+        //   'This will permanently delete all songs from your Best 50 table. ' +
+        //   'This action cannot be undone.\\n\\n' +
+        //   'Click OK to proceed or Cancel to abort.'
+        // );
         
-        if (confirmation) {
+        // Always clear without confirmation
+        // if (confirmation) {
           clearB50Data();
-        }
+        // }
       }
 
       // Function to clear B50 data
@@ -304,29 +714,88 @@
         statusDiv.className = 'alert alert-warning';
         statusDiv.textContent = 'Clearing B50 data...';
 
-        fetch('{% url "clear_b50_data" %}', {
+        // Clear localStorage
+        saveB50Data({ old_songs: [], new_songs: [] });
+        updateDisplay();
+
+        statusDiv.className = 'alert alert-success';
+        statusDiv.textContent = 'B50 data cleared successfully!';
+        setTimeout(() => {
+          statusDiv.style.display = 'none';
+        }, 3000);
+      }
+
+      // Function to handle Save B50 data
+      function saveB50DataToFile() {
+        const statusDiv = document.getElementById('loadStatus');
+        statusDiv.style.display = 'block';
+        statusDiv.className = 'alert alert-info';
+        statusDiv.textContent = 'Generating B50 export file...';
+
+        const b50Data = getB50Data();
+        
+        // Check if there's data to export
+        if (b50Data.old_songs.length === 0 && b50Data.new_songs.length === 0) {
+          statusDiv.className = 'alert alert-warning';
+          statusDiv.textContent = 'No B50 data to export. Add some songs first!';
+          setTimeout(() => {
+            statusDiv.style.display = 'none';
+          }, 3000);
+          return;
+        }
+        
+        fetch('{% url "save_b50_data" %}', {
           method: 'POST',
           headers: {
-            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
-            'Content-Type': 'application/json'
-          }
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+          },
+          body: JSON.stringify(b50Data)
         })
-        .then(response => response.json())
-        .then(data => {
-          if (data.status === 'success') {
-            statusDiv.className = 'alert alert-success';
-            statusDiv.textContent = data.message + ' Refreshing page...';
-            setTimeout(() => {
-              window.location.reload();
-            }, 1500);
+        .then(response => {
+          console.log('B50 save response status:', response.status);
+          console.log('B50 save response content-type:', response.headers.get('content-type'));
+          
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+          
+          const contentType = response.headers.get('content-type');
+          if (contentType && contentType.includes('application/json')) {
+            // If JSON response, there was an error
+            return response.json().then(data => {
+              console.log('Error response data:', data);
+              throw new Error(data.message || 'Unknown error from server');
+            });
           } else {
-            statusDiv.className = 'alert alert-danger';
-            statusDiv.textContent = 'Error: ' + data.message;
+            // If file download, create blob and download
+            return response.blob().then(blob => {
+              console.log('File download blob size:', blob.size);
+              const url = window.URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = 'maimai_b50_data.json';
+              document.body.appendChild(a);
+              a.click();
+              window.URL.revokeObjectURL(url);
+              document.body.removeChild(a);
+              
+              statusDiv.className = 'alert alert-success';
+              statusDiv.textContent = 'B50 data exported successfully!';
+              setTimeout(() => {
+                statusDiv.style.display = 'none';
+              }, 3000);
+            });
           }
         })
         .catch(error => {
+          console.error('Detailed error saving B50 data:', error);
+          console.error('Error stack:', error.stack);
           statusDiv.className = 'alert alert-danger';
-          statusDiv.textContent = 'Network error: ' + error.message;
+          statusDiv.textContent = 'Error saving B50 data: ' + error.message;
+          setTimeout(() => {
+            statusDiv.style.display = 'none';
+          }, 5000);
         });
       }
 
@@ -367,10 +836,12 @@
         }
 
         // Add grid header
-        const headerClone = gridHeader.cloneNode(true);
-        headerClone.style.margin = '0 0 20px 0';
-        headerClone.style.textAlign = 'center';
-        tempContainer.appendChild(headerClone);
+        if (gridHeader) {
+          const headerClone = gridHeader.cloneNode(true);
+          headerClone.style.margin = '0 0 20px 0';
+          headerClone.style.textAlign = 'center';
+          tempContainer.appendChild(headerClone);
+        }
 
         // Add grid
         const gridClone = gridContainer.cloneNode(true);
@@ -450,8 +921,8 @@
                       {% endwith %}
                       <div class="song-cell-bottom-left">
                         <span class="song-rank-bold">{{ song.rank }}</span><br>
-                        <span class="song-achievement">{{ song.achievement }}%</span><br>
-                        <span class="song-chart-diff-bold">{{ song.chart_difficulty }}</span><br>
+                        <span class="song-achievement">{{ song.achievement|floatformat:4 }}%</span><br>
+                        <span class="song-chart-diff-bold">{{ song.chart_difficulty|floatformat:1 }}</span><br>
                       </div>
                       <div class="song-cell-bottom-right">
                         {{ song.calculated_rating }}
@@ -492,8 +963,8 @@
             <td>{{ song.song_name }}</td>
             <td>{{ song.difficulty_type }}</td>
             <td>{{ song.rank }}</td>
-            <td>{{ song.achievement }}</td>
-            <td>{{ song.chart_difficulty }}</td>
+            <td>{{ song.achievement|floatformat:4 }}</td>
+            <td>{{ song.chart_difficulty|floatformat:1 }}</td>
             <td>{{ song.calculated_rating }}</td>
           </tr>
           {% endif %}
@@ -525,8 +996,8 @@
             <td>{{ song.song_name }}</td>
             <td>{{ song.difficulty_type }}</td>
             <td>{{ song.rank }}</td>
-            <td>{{ song.achievement }}</td>
-            <td>{{ song.chart_difficulty }}</td>
+            <td>{{ song.achievement|floatformat:4 }}</td>
+            <td>{{ song.chart_difficulty|floatformat:1 }}</td>
             <td>{{ song.calculated_rating }}</td>
           </tr>
         {% empty %}
