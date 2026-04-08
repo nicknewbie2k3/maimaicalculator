@@ -281,6 +281,15 @@
         .then(data => {
           if (data.status === 'success') {
             const songData = data.song_data;
+            
+            // Ensure version information is available
+            if (!songData.version) {
+              const songInfo = maimaiSongsDict[songData.song_name];
+              if (songInfo && songInfo.version) {
+                songData.version = songInfo.version;
+              }
+            }
+            
             const b50Data = getB50Data();
             
             // Determine if it's old or new song based on version
@@ -327,6 +336,58 @@
         });
         
         return false;
+      }
+
+      // Function to re-categorize imported songs based on version
+      function recategorizeB50Data(importedData) {
+        const recategorized = { old_songs: [], new_songs: [] };
+        
+        // Process all imported songs
+        const allImportedSongs = [...(importedData.old_songs || []), ...(importedData.new_songs || [])];
+        
+        allImportedSongs.forEach(song => {
+          // Determine category based on version or song database
+          let isNewSong = false;
+          
+          // Check if version is directly available
+          if (song.version) {
+            isNewSong = song.version === 'PRiSM PLUS' || song.version === 'CiRCLE';
+          } else {
+            // Fall back to song database lookup
+            const songInfo = maimaiSongsDict[song.song_name];
+            if (songInfo && songInfo.version) {
+              isNewSong = songInfo.version === 'PRiSM PLUS' || songInfo.version === 'CiRCLE';
+              // Add version to song data
+              song.version = songInfo.version;
+            }
+          }
+          
+          const targetArray = isNewSong ? recategorized.new_songs : recategorized.old_songs;
+          const maxLength = isNewSong ? 15 : 35;
+          
+          // Check for existing song with same name and difficulty
+          const existingIndex = targetArray.findIndex(existing => 
+            existing.song_name === song.song_name && 
+            existing.difficulty_type === song.difficulty_type
+          );
+          
+          // Add or replace song
+          if (existingIndex !== -1) {
+            if (song.achievement > targetArray[existingIndex].achievement) {
+              targetArray[existingIndex] = song;
+            }
+          } else {
+            targetArray.push(song);
+          }
+        });
+        
+        // Sort and limit both arrays
+        recategorized.old_songs.sort((a, b) => b.calculated_rating - a.calculated_rating);
+        recategorized.new_songs.sort((a, b) => b.calculated_rating - a.calculated_rating);
+        recategorized.old_songs = recategorized.old_songs.slice(0, 35);
+        recategorized.new_songs = recategorized.new_songs.slice(0, 15);
+        
+        return recategorized;
       }
 
       // Update page display with localStorage data
@@ -437,6 +498,14 @@
 
       // Initialize display on page load
       document.addEventListener('DOMContentLoaded', function() {
+        // Validate and fix existing localStorage data
+        const existingData = getB50Data();
+        if (existingData.old_songs.length > 0 || existingData.new_songs.length > 0) {
+          // Re-categorize existing data to fix any categorization issues
+          const fixedData = recategorizeB50Data(existingData);
+          saveB50Data(fixedData);
+        }
+        
         updateDisplay();
       });
     </script>
@@ -464,12 +533,15 @@
         .then(response => response.json())
         .then(data => {
           if (data.status === 'success') {
+            // Re-categorize imported data based on version information
+            const recategorizedData = recategorizeB50Data(data.data);
+            
             // Save to localStorage
-            saveB50Data(data.data);
+            saveB50Data(recategorizedData);
             updateDisplay();
             
             statusDiv.className = 'alert alert-success';
-            statusDiv.textContent = data.message;
+            statusDiv.textContent = data.message + ` Imported ${recategorizedData.old_songs.length} old songs and ${recategorizedData.new_songs.length} new songs.`;
             setTimeout(() => {
               statusDiv.style.display = 'none';
             }, 3000);

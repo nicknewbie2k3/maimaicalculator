@@ -173,6 +173,21 @@ def save_b50_data(request):
         old_songs = data.get('old_songs', [])
         new_songs = data.get('new_songs', [])
         
+        # Ensure version information is included for all songs
+        for song in old_songs:
+            if 'version' not in song or not song['version']:
+                # Try to get version from database
+                maimai_song = MaimaiSong.objects.filter(title=song['song_name']).first()
+                if maimai_song:
+                    song['version'] = maimai_song.version
+        
+        for song in new_songs:
+            if 'version' not in song or not song['version']:
+                # Try to get version from database
+                maimai_song = MaimaiSong.objects.filter(title=song['song_name']).first()
+                if maimai_song:
+                    song['version'] = maimai_song.version
+        
         # Convert to JSON-serializable format
         b50_data = {
             'export_info': {
