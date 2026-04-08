@@ -6,6 +6,7 @@ urlpatterns = [
     path('databaseUpload/', views.database_upload, name='database_upload'),
     path('chart-database/', views.chart_database, name='chart_database'),
     path('chart-database/download/', views.download_chart_database, name='download_chart_database'),
+    path('chart-database/alias-upload/', views.alias_upload, name='alias_upload'),
     path('chart-database/add-alias/', views.add_alias, name='add_alias'),
     path('chart-database/remove-alias/', views.remove_alias, name='remove_alias'),
     path('chart-database/get-aliases/<int:song_id>/', views.get_song_aliases, name='get_song_aliases'),
