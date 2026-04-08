@@ -91,103 +91,32 @@ def calculator_list(request):
         coefficient = coefficients.get(rank, Decimal('0'))
         calculated_rating = (chart_difficulty * coefficient * achievement_for_calc / 100).to_integral_value(rounding=ROUND_DOWN)
 
-        filter_kwargs = {
+        # Return song data as JSON for localStorage handling
+        song_data = {
             'song_name': song_name,
-            'chart_difficulty': chart_difficulty,
-            'difficulty_type': difficulty_type,  # Add difficulty_type to filter and create
+            'difficulty_type': difficulty_type,
+            'rank': rank,
+            'achievement': float(achievement),
+            'chart_difficulty': float(chart_difficulty),
+            'calculated_rating': int(calculated_rating),
+            'version': version
         }
-        if version in {"PRiSM PLUS", "CiRCLE"}:
-            existing = NewSong.objects.filter(**filter_kwargs).first()
-            if existing:
-                if achievement > existing.achievement:
-                    existing.delete()
-                    NewSong.objects.create(
-                        song_name=song_name,
-                        rank=rank,
-                        achievement=achievement,
-                        chart_difficulty=chart_difficulty,
-                        calculated_rating=calculated_rating,
-                        difficulty_type=difficulty_type
-                    )
-                # else: do not add
-            else:
-                NewSong.objects.create(
-                    song_name=song_name,
-                    rank=rank,
-                    achievement=achievement,
-                    chart_difficulty=chart_difficulty,
-                    calculated_rating=calculated_rating,
-                    difficulty_type=difficulty_type
-                )
-        else:
-            existing = OldSong.objects.filter(**filter_kwargs).first()
-            if existing:
-                if achievement > existing.achievement:
-                    existing.delete()
-                    OldSong.objects.create(
-                        song_name=song_name,
-                        rank=rank,
-                        achievement=achievement,
-                        chart_difficulty=chart_difficulty,
-                        calculated_rating=calculated_rating,
-                        difficulty_type=difficulty_type
-                    )
-                # else: do not add
-            else:
-                OldSong.objects.create(
-                    song_name=song_name,
-                    rank=rank,
-                    achievement=achievement,
-                    chart_difficulty=chart_difficulty,
-                    calculated_rating=calculated_rating,
-                    difficulty_type=difficulty_type
-                )
-        return redirect('calculator_list')
+        
+        return JsonResponse({'status': 'success', 'song_data': song_data})
 
-    # Prepare old and new songs
-    old_songs = list(OldSong.objects.all().order_by('-calculated_rating')[:35])
-    while len(old_songs) < 35:
-        old_songs.append(None)
-    new_songs = list(NewSong.objects.all().order_by('-calculated_rating')[:15])
-    while len(new_songs) < 15:
-        new_songs.append(None)
-
-    # Combine old and new songs for a 5x10 grid (50 cells)
-    all_songs = list(OldSong.objects.all().order_by('-calculated_rating')) + \
-                list(NewSong.objects.all().order_by('-calculated_rating'))
-    all_songs = all_songs[:50]
-    while len(all_songs) < 50:
-        all_songs.append(None)
-    merged_grid = [all_songs[i*5:(i+1)*5] for i in range(10)]  # 10 rows, 5 columns
-
-    # Purge lowest elements if limits exceeded
-    old_count = OldSong.objects.count()
-    new_count = NewSong.objects.count()
-    if old_count > 35:
-        to_delete = OldSong.objects.all().order_by('calculated_rating')[:old_count-35]
-        for obj in to_delete:
-            obj.delete()
-    if new_count > 15:
-        to_delete = NewSong.objects.all().order_by('calculated_rating')[:new_count-15]
-        for obj in to_delete:
-            obj.delete()
-    # Calculate total ratings
-    old_total_rating = sum(song.calculated_rating for song in old_songs if song)
-    new_total_rating = sum(song.calculated_rating for song in new_songs if song)
-    total_rating = old_total_rating + new_total_rating
-    total_count = sum(1 for song in old_songs if song) + sum(1 for song in new_songs if song)
-    total_average_rating = (total_rating / total_count) if total_count else 0
+    # Return empty data - frontend will populate from localStorage
     all_song_names = MaimaiSong.objects.values_list('title', flat=True).distinct()
     maimai_songs = MaimaiSong.objects.all()
     maimai_songs_dict = {song.title: song for song in maimai_songs}
+    
     return render(request, "main/calculator_list.html", {
-        "old_songs": old_songs,
-        "new_songs": new_songs,
-        "merged_grid": merged_grid,  # <-- merged 10x5 grid
-        "total_rating": total_rating,
-        "old_total_rating": old_total_rating,
-        "new_total_rating": new_total_rating,
-        "total_average_rating": total_average_rating,
+        "old_songs": [],
+        "new_songs": [],
+        "merged_grid": [[None] * 5 for _ in range(10)],  # Empty 10x5 grid
+        "total_rating": 0,
+        "old_total_rating": 0,
+        "new_total_rating": 0,
+        "total_average_rating": 0,
         "all_song_names": all_song_names,
         "maimai_songs_dict": maimai_songs_dict,
     })
@@ -237,46 +166,36 @@ def database_upload(request):
     return render(request, "main/databaseUpload.html", {"message": message})
 
 def save_b50_data(request):
-    """Export current B50 data to JSON file for download."""
-    # Get top 35 old songs and top 15 new songs
-    old_songs = list(OldSong.objects.all().order_by('-calculated_rating')[:35])
-    new_songs = list(NewSong.objects.all().order_by('-calculated_rating')[:15])
+    """Export B50 data from localStorage as JSON file for download."""
+    if request.method == 'POST':
+        # Receive B50 data from frontend localStorage
+        data = json.loads(request.body)
+        old_songs = data.get('old_songs', [])
+        new_songs = data.get('new_songs', [])
+        
+        # Convert to JSON-serializable format
+        b50_data = {
+            'export_info': {
+                'version': '1.0',
+                'export_date': '2026-04-08',
+                'total_songs': len(old_songs) + len(new_songs)
+            },
+            'old_songs': old_songs,
+            'new_songs': new_songs
+        }
+        
+        # Create JSON response for download
+        response = HttpResponse(
+            json.dumps(b50_data, indent=2),
+            content_type='application/json'
+        )
+        response['Content-Disposition'] = 'attachment; filename="maimai_b50_data.json"'
+        return response
     
-    # Convert to JSON-serializable format
-    b50_data = {
-        'export_info': {
-            'version': '1.0',
-            'export_date': '2026-04-08',
-            'total_songs': len(old_songs) + len(new_songs)
-        },
-        'old_songs': [{
-            'song_name': song.song_name,
-            'difficulty_type': song.difficulty_type,
-            'rank': song.rank,
-            'achievement': float(song.achievement),
-            'chart_difficulty': float(song.chart_difficulty),
-            'calculated_rating': song.calculated_rating
-        } for song in old_songs],
-        'new_songs': [{
-            'song_name': song.song_name,
-            'difficulty_type': song.difficulty_type,
-            'rank': song.rank,
-            'achievement': float(song.achievement),
-            'chart_difficulty': float(song.chart_difficulty),
-            'calculated_rating': song.calculated_rating
-        } for song in new_songs]
-    }
-    
-    # Create JSON response for download
-    response = HttpResponse(
-        json.dumps(b50_data, indent=2),
-        content_type='application/json'
-    )
-    response['Content-Disposition'] = 'attachment; filename="maimai_b50_data.json"'
-    return response
+    return JsonResponse({'status': 'error', 'message': 'Invalid request method.'})
 
 def load_b50_data(request):
-    """Import B50 data from uploaded JSON file."""
+    """Load B50 data from uploaded JSON file and return it for localStorage."""
     if request.method == 'POST' and request.FILES.get('b50_file'):
         try:
             json_file = request.FILES['b50_file']
@@ -286,39 +205,15 @@ def load_b50_data(request):
             if 'old_songs' not in data or 'new_songs' not in data:
                 return JsonResponse({'status': 'error', 'message': 'Invalid file format. Missing old_songs or new_songs data.'})
             
-            # Clear existing data
-            OldSong.objects.all().delete()
-            NewSong.objects.all().delete()
-            
-            # Load old songs
-            for song_data in data.get('old_songs', []):
-                try:
-                    OldSong.objects.create(
-                        song_name=song_data['song_name'],
-                        difficulty_type=song_data['difficulty_type'],
-                        rank=song_data['rank'],
-                        achievement=Decimal(str(song_data['achievement'])),
-                        chart_difficulty=Decimal(str(song_data['chart_difficulty'])),
-                        calculated_rating=song_data['calculated_rating']
-                    )
-                except Exception as e:
-                    print(f"Error loading old song: {e}")
-            
-            # Load new songs
-            for song_data in data.get('new_songs', []):
-                try:
-                    NewSong.objects.create(
-                        song_name=song_data['song_name'],
-                        difficulty_type=song_data['difficulty_type'],
-                        rank=song_data['rank'],
-                        achievement=Decimal(str(song_data['achievement'])),
-                        chart_difficulty=Decimal(str(song_data['chart_difficulty'])),
-                        calculated_rating=song_data['calculated_rating']
-                    )
-                except Exception as e:
-                    print(f"Error loading new song: {e}")
-            
-            return JsonResponse({'status': 'success', 'message': 'B50 data loaded successfully!'})
+            # Return the data for frontend localStorage handling
+            return JsonResponse({
+                'status': 'success', 
+                'message': 'B50 data loaded successfully!',
+                'data': {
+                    'old_songs': data.get('old_songs', []),
+                    'new_songs': data.get('new_songs', [])
+                }
+            })
             
         except json.JSONDecodeError:
             return JsonResponse({'status': 'error', 'message': 'Invalid JSON file format.'})
@@ -328,23 +223,13 @@ def load_b50_data(request):
     return JsonResponse({'status': 'error', 'message': 'No file uploaded or invalid request method.'})
 
 def clear_b50_data(request):
-    """Clear all B50 data (both old and new songs)."""
+    """Clear all B50 data (handled by frontend localStorage)."""
     if request.method == 'POST':
-        try:
-            # Delete all old and new songs
-            old_count = OldSong.objects.count()
-            new_count = NewSong.objects.count()
-            
-            OldSong.objects.all().delete()
-            NewSong.objects.all().delete()
-            
-            return JsonResponse({
-                'status': 'success', 
-                'message': f'Successfully cleared {old_count + new_count} songs from B50 table.'
-            })
-            
-        except Exception as e:
-            return JsonResponse({'status': 'error', 'message': f'Error clearing data: {str(e)}'})
+        # Since data is stored in localStorage, clearing is handled by frontend
+        return JsonResponse({
+            'status': 'success', 
+            'message': 'B50 data cleared successfully!'
+        })
     
     return JsonResponse({'status': 'error', 'message': 'Invalid request method.'})
 
