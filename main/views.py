@@ -1014,6 +1014,104 @@ def convert_cache_data_to_b50_format(cache_data):
         traceback.print_exc()
         return {'old_songs': [], 'new_songs': [], 'export_info': {'version': '2.0', 'export_date': datetime.now().strftime('%Y-%m-%d'), 'total_songs': 0, 'note': f'Conversion failed: {str(e)}'}}
 
+def convert_cache_to_b50_direct(request):
+    """Combined function: Decompress cache file and convert directly to B50 format."""
+    if request.method == 'POST' and request.FILES.get('astro_cache_file'):
+        try:
+            cache_file = request.FILES['astro_cache_file']
+            
+            # Step 1: Decompress the cache file (same logic as load_astro_cache_data)
+            cache_data = None
+            original_filename = cache_file.name
+            
+            try:
+                # Read the uploaded file content
+                file_content = cache_file.read()
+                
+                # Use the same comprehensive decompression logic as load_astro_cache_data
+                cache_data = None
+                decompressed_content = None
+                compression_method = None
+                
+                # First, try to parse as uncompressed JSON
+                try:
+                    decompressed_text = file_content.decode('utf-8')
+                    cache_data = json.loads(decompressed_text)  # Validate it's JSON
+                    compression_method = "uncompressed"
+                    print("Successfully loaded as uncompressed JSON")
+                except (UnicodeDecodeError, json.JSONDecodeError):
+                    pass
+                
+                # If not JSON, try different decompression methods
+                if cache_data is None:
+                    compression_methods = [
+                        ("gzip", lambda x: gzip.decompress(x)),
+                        ("deflate", lambda x: zlib.decompress(x)),
+                        ("deflate_raw", lambda x: zlib.decompress(x, -zlib.MAX_WBITS)),
+                        ("bzip2", lambda x: bz2.decompress(x)),
+                        ("deflate_auto", lambda x: zlib.decompress(x, 16 + zlib.MAX_WBITS)),
+                    ]
+                    
+                    for method_name, decompress_func in compression_methods:
+                        try:
+                            decompressed_bytes = decompress_func(file_content)
+                            decompressed_text = decompressed_bytes.decode('utf-8')
+                            cache_data = json.loads(decompressed_text)  # Validate it's JSON
+                            compression_method = method_name
+                            print(f"Successfully decompressed using {method_name}")
+                            break
+                        except Exception:
+                            continue
+                
+                # Try different character encodings as final fallback
+                if cache_data is None:
+                    try:
+                        for encoding in ['utf-8', 'utf-16', 'utf-32', 'ascii', 'latin1']:
+                            try:
+                                decoded_text = file_content.decode(encoding)
+                                cache_data = json.loads(decoded_text)  # Validate it's JSON
+                                compression_method = f"uncompressed ({encoding})"
+                                print(f"Successfully loaded using {encoding} encoding")
+                                break
+                            except (UnicodeDecodeError, json.JSONDecodeError):
+                                continue
+                    except Exception:
+                        pass
+                
+                # If all methods failed
+                if cache_data is None:
+                    raise Exception('Failed to decompress or decode the file. Tried multiple compression methods (gzip, deflate variants, bzip2) and character encodings. Please check if the file is a valid compressed JSON file.')
+            
+            except Exception as decomp_error:
+                return JsonResponse({'status': 'error', 'message': f'Failed to decompress or parse file: {str(decomp_error)}'})
+            
+            if not cache_data:
+                return JsonResponse({'status': 'error', 'message': 'Failed to decompress cache file or the file is empty.'})
+            
+            # Step 2: Convert the decompressed cache data to B50 format
+            b50_data = convert_cache_data_to_b50_format(cache_data)
+            
+            if b50_data['old_songs'] or b50_data['new_songs']:
+                # Store the B50 data in session for download
+                b50_json = json.dumps(b50_data, indent=2, ensure_ascii=False)
+                request.session['converted_b50_data'] = b50_json
+                base_name = original_filename.rsplit('.', 1)[0] if '.' in original_filename else original_filename
+                request.session['converted_b50_filename'] = f"{base_name}_b50_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+                
+                return JsonResponse({
+                    'status': 'success',
+                    'message': f'Cache file successfully converted to B50 format! Found {len(b50_data["old_songs"])} old songs and {len(b50_data["new_songs"])} new songs.',
+                    'data': b50_data,
+                    'has_b50_file': True
+                })
+            else:
+                return JsonResponse({'status': 'error', 'message': 'No valid song data found in cache file. Please ensure the file contains level_metadata or similar song data structure.'})
+                
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': f'Error processing cache file: {str(e)}'})
+    
+    return JsonResponse({'status': 'error', 'message': 'No cache file uploaded or invalid request method.'})
+
 def chart_database(request):
     songs_qs = MaimaiSong.objects.all()
 

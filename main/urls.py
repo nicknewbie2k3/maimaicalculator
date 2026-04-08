@@ -15,6 +15,7 @@ urlpatterns = [
     path('load-astro-cache/', views.load_astro_cache_data, name='load_astro_cache_data'),
     path('download-decompressed-cache/', views.download_decompressed_cache, name='download_decompressed_cache'),
     path('convert-cache-to-b50/', views.convert_cache_to_b50, name='convert_cache_to_b50'),
+    path('convert-cache-to-b50-direct/', views.convert_cache_to_b50_direct, name='convert_cache_to_b50_direct'),
     path('download-converted-b50/', views.download_converted_b50, name='download_converted_b50'),
     path('clear-b50/', views.clear_b50_data, name='clear_b50_data'),
 ]

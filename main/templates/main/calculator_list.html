@@ -172,14 +172,8 @@
       <button type="button" class="btn btn-primary me-2" onclick="document.getElementById('b50FileInput').click();">
         <i class="fas fa-upload me-1"></i>Load B50 Data
       </button>
-      <button type="button" class="btn btn-warning me-2" onclick="document.getElementById('astroCacheFileInput').click();">
-        <i class="fas fa-file-archive me-1"></i>Decompress Cache File
-      </button>
-      <button type="button" class="btn btn-outline-secondary me-2" id="downloadDecompressedBtn" onclick="downloadDecompressedCache()" style="display: none;" title="Download the decompressed JSON file">
-        <i class="fas fa-file-download me-1"></i>Download Decompressed Cache
-      </button>
-      <button type="button" class="btn btn-primary me-2" id="convertToB50Btn" onclick="document.getElementById('jsonToB50FileInput').click();" title="Convert JSON file to B50 format">
-        <i class="fas fa-exchange-alt me-1"></i>Convert to B50
+      <button type="button" class="btn btn-warning me-2" onclick="document.getElementById('cacheToB50FileInput').click();">
+        <i class="fas fa-exchange-alt me-1"></i>Convert Cache to B50 File
       </button>
       <button type="button" class="btn btn-success me-2" id="downloadB50Btn" onclick="downloadConvertedB50()" style="display: none;" title="Download the converted B50 file">
         <i class="fas fa-download me-1"></i>Download B50 File
@@ -191,8 +185,7 @@
         <i class="fas fa-trash me-1"></i>Clear B50 Data
       </button>
       <input type="file" id="b50FileInput" accept=".json" style="display: none;">
-      <input type="file" id="astroCacheFileInput" accept="*" style="display: none;">
-      <input type="file" id="jsonToB50FileInput" accept=".json" style="display: none;">
+      <input type="file" id="cacheToB50FileInput" accept="*" style="display: none;">
       <div id="loadStatus" class="alert mt-3" style="display: none;"></div>
       
       <!-- Chart Type Legend -->
@@ -856,8 +849,8 @@
         this.value = '';
       });
 
-      // Handle file upload for cache file decompression
-      document.getElementById('astroCacheFileInput').addEventListener('change', function() {
+      // Handle combined cache to B50 conversion
+      document.getElementById('cacheToB50FileInput').addEventListener('change', function() {
         const file = this.files[0];
         if (!file) return;
 
@@ -868,71 +861,12 @@
         const statusDiv = document.getElementById('loadStatus');
         statusDiv.style.display = 'block';
         statusDiv.className = 'alert alert-info';
-        statusDiv.textContent = 'Decompressing cache file...';
+        statusDiv.textContent = 'Converting cache file to B50 format...';
 
-        // Hide all cache-related buttons initially
-        document.getElementById('downloadDecompressedBtn').style.display = 'none';
-        document.getElementById('convertToB50Btn').style.display = 'none';
+        // Hide B50 download button initially
         document.getElementById('downloadB50Btn').style.display = 'none';
 
-        fetch('{% url "load_astro_cache_data" %}', {
-          method: 'POST',
-          body: formData
-        })
-        .then(response => response.json())
-        .then(data => {
-          if (data.status === 'success') {
-            statusDiv.className = 'alert alert-success';
-            statusDiv.textContent = data.message;
-            
-            // Show download and convert buttons for the decompressed file
-            console.log('Astro cache decompression successful:', data); // Debug log
-            if (data.has_decompressed_file) {
-              console.log('Showing download and convert buttons'); // Debug log
-              document.getElementById('downloadDecompressedBtn').style.display = 'inline-block';
-              document.getElementById('convertToB50Btn').style.display = 'inline-block';
-              // Hide B50 download button initially
-              document.getElementById('downloadB50Btn').style.display = 'none';
-            }
-            
-            setTimeout(() => {
-              statusDiv.style.display = 'none';
-            }, 5000);
-          } else {
-            statusDiv.className = 'alert alert-danger';
-            statusDiv.textContent = 'Error: ' + data.message;
-            setTimeout(() => {
-              statusDiv.style.display = 'none';
-            }, 7000);
-          }
-        })
-        .catch(error => {
-          statusDiv.className = 'alert alert-danger';
-          statusDiv.textContent = 'Network error: ' + error.message;
-          setTimeout(() => {
-            statusDiv.style.display = 'none';
-          }, 7000);
-        });
-
-        // Reset file input
-        this.value = '';
-      });
-
-      // Handle file upload for JSON to B50 conversion
-      document.getElementById('jsonToB50FileInput').addEventListener('change', function() {
-        const file = this.files[0];
-        if (!file) return;
-
-        const formData = new FormData();
-        formData.append('json_file', file);
-        formData.append('csrfmiddlewaretoken', document.querySelector('[name=csrfmiddlewaretoken]').value);
-
-        const statusDiv = document.getElementById('loadStatus');
-        statusDiv.style.display = 'block';
-        statusDiv.className = 'alert alert-info';
-        statusDiv.textContent = 'Converting JSON file to B50 format...';
-
-        fetch('{% url "convert_cache_to_b50" %}', {
+        fetch('{% url "convert_cache_to_b50_direct" %}', {
           method: 'POST',
           body: formData
         })
@@ -945,14 +879,6 @@
             // Show B50 download button
             document.getElementById('downloadB50Btn').style.display = 'inline-block';
             
-            // Optionally load the data into the calculator
-            if (data.data) {
-              console.log('B50 data converted:', data.data);
-              // Uncomment the lines below if you want to auto-load the data
-              // saveB50Data(data.data);
-              // updateDisplay();
-            }
-            
             setTimeout(() => {
               statusDiv.style.display = 'none';
             }, 5000);
@@ -975,31 +901,6 @@
         // Reset file input
         this.value = '';
       });
-
-      // Function to download decompressed cache file
-      function downloadDecompressedCache() {
-        const statusDiv = document.getElementById('loadStatus');
-        statusDiv.style.display = 'block';
-        statusDiv.className = 'alert alert-info';
-        statusDiv.textContent = 'Preparing decompressed JSON file for download...';
-
-        // Create a temporary link to trigger the download
-        const downloadLink = document.createElement('a');
-        downloadLink.href = '{% url "download_decompressed_cache" %}';
-        downloadLink.download = '';
-        document.body.appendChild(downloadLink);
-        downloadLink.click();
-        document.body.removeChild(downloadLink);
-        
-        // Show success message
-        setTimeout(() => {
-          statusDiv.className = 'alert alert-success';
-          statusDiv.textContent = 'Decompressed file download started!';
-          setTimeout(() => {
-            statusDiv.style.display = 'none';
-          }, 2000);
-        }, 500);
-      }
 
       // Function to download converted B50 file
       function downloadConvertedB50() {
