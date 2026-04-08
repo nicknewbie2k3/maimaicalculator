@@ -2,6 +2,7 @@ import json
 from decimal import Decimal, InvalidOperation, ROUND_DOWN
 from django.shortcuts import render, redirect
 from django.core.paginator import Paginator
+from django.http import HttpResponse, JsonResponse
 from .models import OldSong, NewSong, MaimaiSong
 
 def parse_decimal(val):
@@ -234,6 +235,118 @@ def database_upload(request):
         except Exception as e:
             message = f"Error processing file: {e}"
     return render(request, "main/databaseUpload.html", {"message": message})
+
+def save_b50_data(request):
+    """Export current B50 data to JSON file for download."""
+    # Get top 35 old songs and top 15 new songs
+    old_songs = list(OldSong.objects.all().order_by('-calculated_rating')[:35])
+    new_songs = list(NewSong.objects.all().order_by('-calculated_rating')[:15])
+    
+    # Convert to JSON-serializable format
+    b50_data = {
+        'export_info': {
+            'version': '1.0',
+            'export_date': '2026-04-08',
+            'total_songs': len(old_songs) + len(new_songs)
+        },
+        'old_songs': [{
+            'song_name': song.song_name,
+            'difficulty_type': song.difficulty_type,
+            'rank': song.rank,
+            'achievement': float(song.achievement),
+            'chart_difficulty': float(song.chart_difficulty),
+            'calculated_rating': song.calculated_rating
+        } for song in old_songs],
+        'new_songs': [{
+            'song_name': song.song_name,
+            'difficulty_type': song.difficulty_type,
+            'rank': song.rank,
+            'achievement': float(song.achievement),
+            'chart_difficulty': float(song.chart_difficulty),
+            'calculated_rating': song.calculated_rating
+        } for song in new_songs]
+    }
+    
+    # Create JSON response for download
+    response = HttpResponse(
+        json.dumps(b50_data, indent=2),
+        content_type='application/json'
+    )
+    response['Content-Disposition'] = 'attachment; filename="maimai_b50_data.json"'
+    return response
+
+def load_b50_data(request):
+    """Import B50 data from uploaded JSON file."""
+    if request.method == 'POST' and request.FILES.get('b50_file'):
+        try:
+            json_file = request.FILES['b50_file']
+            data = json.load(json_file)
+            
+            # Validate JSON structure
+            if 'old_songs' not in data or 'new_songs' not in data:
+                return JsonResponse({'status': 'error', 'message': 'Invalid file format. Missing old_songs or new_songs data.'})
+            
+            # Clear existing data
+            OldSong.objects.all().delete()
+            NewSong.objects.all().delete()
+            
+            # Load old songs
+            for song_data in data.get('old_songs', []):
+                try:
+                    OldSong.objects.create(
+                        song_name=song_data['song_name'],
+                        difficulty_type=song_data['difficulty_type'],
+                        rank=song_data['rank'],
+                        achievement=Decimal(str(song_data['achievement'])),
+                        chart_difficulty=Decimal(str(song_data['chart_difficulty'])),
+                        calculated_rating=song_data['calculated_rating']
+                    )
+                except Exception as e:
+                    print(f"Error loading old song: {e}")
+            
+            # Load new songs
+            for song_data in data.get('new_songs', []):
+                try:
+                    NewSong.objects.create(
+                        song_name=song_data['song_name'],
+                        difficulty_type=song_data['difficulty_type'],
+                        rank=song_data['rank'],
+                        achievement=Decimal(str(song_data['achievement'])),
+                        chart_difficulty=Decimal(str(song_data['chart_difficulty'])),
+                        calculated_rating=song_data['calculated_rating']
+                    )
+                except Exception as e:
+                    print(f"Error loading new song: {e}")
+            
+            return JsonResponse({'status': 'success', 'message': 'B50 data loaded successfully!'})
+            
+        except json.JSONDecodeError:
+            return JsonResponse({'status': 'error', 'message': 'Invalid JSON file format.'})
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': f'Error processing file: {str(e)}'})
+    
+    return JsonResponse({'status': 'error', 'message': 'No file uploaded or invalid request method.'})
+
+def clear_b50_data(request):
+    """Clear all B50 data (both old and new songs)."""
+    if request.method == 'POST':
+        try:
+            # Delete all old and new songs
+            old_count = OldSong.objects.count()
+            new_count = NewSong.objects.count()
+            
+            OldSong.objects.all().delete()
+            NewSong.objects.all().delete()
+            
+            return JsonResponse({
+                'status': 'success', 
+                'message': f'Successfully cleared {old_count + new_count} songs from B50 table.'
+            })
+            
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': f'Error clearing data: {str(e)}'})
+    
+    return JsonResponse({'status': 'error', 'message': 'Invalid request method.'})
 
 def chart_database(request):
     songs_qs = MaimaiSong.objects.all()

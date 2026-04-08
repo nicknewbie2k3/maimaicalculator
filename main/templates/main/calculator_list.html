@@ -4,6 +4,8 @@
 {% block content %}
   <!-- Bootstrap CSS CDN (if not already in base.html) -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- html2canvas for image capture -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
   <style>
     .diff-basic { background-color: #00b62a !important; }
@@ -144,6 +146,25 @@
       New Chart Total Rating: {{ new_total_rating }} &nbsp;|&nbsp;
       Total Average Rating: {{ total_average_rating|floatformat:0 }}
     </h4>
+    
+    <!-- Save/Load B50 Data Buttons -->
+    <div class="text-center mb-4">
+      <a href="{% url 'save_b50_data' %}" class="btn btn-success me-2">
+        <i class="fas fa-download me-1"></i>Save B50 Data
+      </a>
+      <button type="button" class="btn btn-primary me-2" onclick="document.getElementById('b50FileInput').click();">
+        <i class="fas fa-upload me-1"></i>Load B50 Data
+      </button>
+      <button type="button" class="btn btn-info me-2" onclick="printB50()">
+        <i class="fas fa-camera me-1"></i>Print B50
+      </button>
+      <button type="button" class="btn btn-danger" onclick="confirmClearB50()">
+        <i class="fas fa-trash me-1"></i>Clear B50 Data
+      </button>
+      <input type="file" id="b50FileInput" accept=".json" style="display: none;">
+      <div id="loadStatus" class="alert mt-3" style="display: none;"></div>
+    </div>
+    
     <form method="post" class="row g-3 align-items-center mb-4 position-relative" autocomplete="off">
       {% csrf_token %}
       <div class="col-auto">
@@ -220,8 +241,180 @@
       });
     </script>
 
+    <!-- B50 Load/Save JavaScript -->
+    <script>
+      // Handle file upload for B50 data
+      document.getElementById('b50FileInput').addEventListener('change', function() {
+        const file = this.files[0];
+        if (!file) return;
+
+        const formData = new FormData();
+        formData.append('b50_file', file);
+        formData.append('csrfmiddlewaretoken', document.querySelector('[name=csrfmiddlewaretoken]').value);
+
+        const statusDiv = document.getElementById('loadStatus');
+        statusDiv.style.display = 'block';
+        statusDiv.className = 'alert alert-info';
+        statusDiv.textContent = 'Uploading and processing B50 data...';
+
+        fetch('{% url "load_b50_data" %}', {
+          method: 'POST',
+          body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+          if (data.status === 'success') {
+            statusDiv.className = 'alert alert-success';
+            statusDiv.textContent = data.message + ' Refreshing page...';
+            setTimeout(() => {
+              window.location.reload();
+            }, 1500);
+          } else {
+            statusDiv.className = 'alert alert-danger';
+            statusDiv.textContent = 'Error: ' + data.message;
+          }
+        })
+        .catch(error => {
+          statusDiv.className = 'alert alert-danger';
+          statusDiv.textContent = 'Network error: ' + error.message;
+        });
+
+        // Reset file input
+        this.value = '';
+      });
+
+      // Function to confirm and clear B50 data
+      function confirmClearB50() {
+        const confirmation = confirm(
+          'Are you sure you want to clear all B50 data?\\n\\n' +
+          'This will permanently delete all songs from your Best 50 table. ' +
+          'This action cannot be undone.\\n\\n' +
+          'Click OK to proceed or Cancel to abort.'
+        );
+        
+        if (confirmation) {
+          clearB50Data();
+        }
+      }
+
+      // Function to clear B50 data
+      function clearB50Data() {
+        const statusDiv = document.getElementById('loadStatus');
+        statusDiv.style.display = 'block';
+        statusDiv.className = 'alert alert-warning';
+        statusDiv.textContent = 'Clearing B50 data...';
+
+        fetch('{% url "clear_b50_data" %}', {
+          method: 'POST',
+          headers: {
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+            'Content-Type': 'application/json'
+          }
+        })
+        .then(response => response.json())
+        .then(data => {
+          if (data.status === 'success') {
+            statusDiv.className = 'alert alert-success';
+            statusDiv.textContent = data.message + ' Refreshing page...';
+            setTimeout(() => {
+              window.location.reload();
+            }, 1500);
+          } else {
+            statusDiv.className = 'alert alert-danger';
+            statusDiv.textContent = 'Error: ' + data.message;
+          }
+        })
+        .catch(error => {
+          statusDiv.className = 'alert alert-danger';
+          statusDiv.textContent = 'Network error: ' + error.message;
+        });
+      }
+
+      // Function to print/capture B50 grid as image
+      function printB50() {
+        const statusDiv = document.getElementById('loadStatus');
+        statusDiv.style.display = 'block';
+        statusDiv.className = 'alert alert-info';
+        statusDiv.textContent = 'Generating B50 image...';
+
+        const gridContainer = document.getElementById('b50GridContainer');
+        const gridHeader = Array.from(document.querySelectorAll('h2')).find(h => h.textContent.includes('All Songs (Old + New) Grid View'));
+        const ratingHeader = Array.from(document.querySelectorAll('h2')).find(h => h.textContent.includes('Total Rating'));
+        const ratingSubheader = document.querySelector('h4');
+
+        // Create a temporary container with header and grid
+        const tempContainer = document.createElement('div');
+        tempContainer.style.background = 'white';
+        tempContainer.style.padding = '20px';
+        tempContainer.style.position = 'absolute';
+        tempContainer.style.left = '-9999px';
+        tempContainer.style.top = '0';
+        tempContainer.style.width = Math.max(gridContainer.offsetWidth, 800) + 'px';
+
+        // Add rating information
+        if (ratingHeader) {
+          const ratingClone = ratingHeader.cloneNode(true);
+          ratingClone.style.margin = '0 0 10px 0';
+          ratingClone.style.textAlign = 'center';
+          tempContainer.appendChild(ratingClone);
+        }
+
+        if (ratingSubheader) {
+          const subheaderClone = ratingSubheader.cloneNode(true);
+          subheaderClone.style.margin = '0 0 20px 0';
+          subheaderClone.style.textAlign = 'center';
+          tempContainer.appendChild(subheaderClone);
+        }
+
+        // Add grid header
+        const headerClone = gridHeader.cloneNode(true);
+        headerClone.style.margin = '0 0 20px 0';
+        headerClone.style.textAlign = 'center';
+        tempContainer.appendChild(headerClone);
+
+        // Add grid
+        const gridClone = gridContainer.cloneNode(true);
+        tempContainer.appendChild(gridClone);
+
+        document.body.appendChild(tempContainer);
+
+        html2canvas(tempContainer, {
+          backgroundColor: '#ffffff',
+          scale: 2,
+          useCORS: true,
+          allowTaint: false,
+          width: tempContainer.offsetWidth,
+          height: tempContainer.offsetHeight
+        }).then(canvas => {
+          // Remove temporary container
+          document.body.removeChild(tempContainer);
+
+          // Create download link
+          const link = document.createElement('a');
+          link.download = 'maimai_b50_grid.png';
+          link.href = canvas.toDataURL('image/png');
+          link.click();
+
+          statusDiv.className = 'alert alert-success';
+          statusDiv.textContent = 'B50 image generated successfully!';
+          setTimeout(() => {
+            statusDiv.style.display = 'none';
+          }, 3000);
+        }).catch(error => {
+          // Remove temporary container if error occurs
+          if (tempContainer.parentNode) {
+            document.body.removeChild(tempContainer);
+          }
+
+          statusDiv.className = 'alert alert-danger';
+          statusDiv.textContent = 'Error generating image: ' + error.message;
+          console.error('html2canvas error:', error);
+        });
+      }
+    </script>
+
     <h2 class="mt-5">All Songs (Old + New) Grid View</h2>
-    <div class="table-responsive mb-4">
+    <div id="b50GridContainer" class="table-responsive mb-4">
       <table class="table table-bordered align-middle" style="table-layout: fixed;">
         <tbody>
           {% for row in merged_grid %}
