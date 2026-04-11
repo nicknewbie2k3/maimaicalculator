@@ -173,7 +173,7 @@
         <i class="fas fa-upload me-1"></i>Load B50 Data
       </button>
       <button type="button" class="btn btn-warning me-2" onclick="document.getElementById('cacheToB50FileInput').click();">
-        <i class="fas fa-exchange-alt me-1"></i>Convert Cache to B50 File
+        <i class="fas fa-exchange-alt me-1"></i>Convert Cache to B50
       </button>
       <button type="button" class="btn btn-success me-2" id="downloadB50Btn" onclick="downloadConvertedB50()" style="display: none;" title="Download the converted B50 file">
         <i class="fas fa-download me-1"></i>Download B50 File
@@ -615,8 +615,13 @@
         const totalCount = b50Data.old_songs.length + b50Data.new_songs.length;
         const avgRating = totalCount > 0 ? Math.round(totalRating / totalCount) : 0;
         
-        // Update rating displays
-        const totalRatingHeader = Array.from(document.querySelectorAll('h2')).find(h => h.textContent.includes('Total Rating'));
+        // Update rating displays with AstroDX format
+        const titleHeader = document.querySelector('h1');
+        if (titleHeader) {
+          titleHeader.textContent = 'AstroDX Manual Rating Converter';
+        }
+        
+        const totalRatingHeader = Array.from(document.querySelectorAll('h2')).find(h => h.textContent.includes('Total Rating') || h.textContent.includes('B50 Rating'));
         if (totalRatingHeader) {
           totalRatingHeader.textContent = `Total Rating: ${totalRating}`;
         }
@@ -624,9 +629,7 @@
         const ratingSubheader = document.querySelector('h4');
         if (ratingSubheader) {
           ratingSubheader.innerHTML = `
-            Old Chart Total Rating: ${oldTotalRating} &nbsp;|&nbsp;
-            New Chart Total Rating: ${newTotalRating} &nbsp;|&nbsp;
-            Total Average Rating: ${avgRating}
+            Old Chart Total Rating: ${oldTotalRating} | New Chart Total Rating: ${newTotalRating} | Total Average Rating: ${avgRating}
           `;
         }
         
@@ -636,20 +639,17 @@
       }
 
       function updateGridDisplay(b50Data) {
-        // Sort old and new songs separately by rating
-        const sortedOldSongs = [...b50Data.old_songs]
-          .sort((a, b) => b.calculated_rating - a.calculated_rating)
-          .slice(0, 35); // Max 35 old songs
-        const sortedNewSongs = [...b50Data.new_songs]
-          .sort((a, b) => b.calculated_rating - a.calculated_rating)
-          .slice(0, 15); // Max 15 new songs
+        // Use the EXACT data provided (already sorted and selected by backend)
+        // Do NOT re-sort or re-select here to maintain consistency with table
+        const oldSongs = [...b50Data.old_songs]; // Use exact order from backend
+        const newSongs = [...b50Data.new_songs]; // Use exact order from backend
         
         // Pad arrays to full capacity
-        while (sortedOldSongs.length < 35) {
-          sortedOldSongs.push(null);
+        while (oldSongs.length < 35) {
+          oldSongs.push(null);
         }
-        while (sortedNewSongs.length < 15) {
-          sortedNewSongs.push(null);
+        while (newSongs.length < 15) {
+          newSongs.push(null);
         }
         
         // Update grid cells
@@ -670,11 +670,11 @@
             if (row < 7) {
               // Rows 0-6: Old charts (35 positions)
               const oldSongIndex = row * 5 + col;
-              song = sortedOldSongs[oldSongIndex];
+              song = oldSongs[oldSongIndex];
             } else {
               // Rows 7-9: New charts (15 positions) 
               const newSongIndex = (row - 7) * 5 + col;
-              song = sortedNewSongs[newSongIndex];
+              song = newSongs[newSongIndex];
             }
             
             td.className = 'song-grid-cell' + (row === 7 ? ' border-divider-row' : '');
@@ -701,6 +701,31 @@
         
         // Update New Songs table  
         updateSongTable('new', b50Data.new_songs);
+        
+        // Update headers without "Best X" text
+        const oldTableHeader = document.getElementById('oldSongsTableHeader');
+        const newTableHeader = document.getElementById('newSongsTableHeader');
+        if (oldTableHeader) {
+          oldTableHeader.textContent = `Old Songs (${b50Data.old_songs.length})`;
+        }
+        if (newTableHeader) {
+          newTableHeader.textContent = `New Songs (${b50Data.new_songs.length})`;
+        }
+        
+        // Calculate and update rating totals
+        const oldTotalRating = b50Data.old_songs.reduce((sum, song) => sum + (song.calculated_rating || 0), 0);
+        const newTotalRating = b50Data.new_songs.reduce((sum, song) => sum + (song.calculated_rating || 0), 0);
+        const totalRating = oldTotalRating + newTotalRating;
+        const avgRating = b50Data.old_songs.length + b50Data.new_songs.length > 0 ? 
+                         Math.round(totalRating / (b50Data.old_songs.length + b50Data.new_songs.length)) : 0;
+        
+        // Update the header display for B50 mode
+        document.querySelector('h2').textContent = `Total Rating: ${totalRating}`;
+        document.querySelector('h4').innerHTML = `
+          Old Chart Total Rating: ${oldTotalRating} &nbsp;|&nbsp;
+          New Chart Total Rating: ${newTotalRating} &nbsp;|&nbsp;
+          Total Average Rating: ${avgRating}
+        `;
       }
 
       // Helper function to update a specific song table
@@ -855,18 +880,18 @@
         if (!file) return;
 
         const formData = new FormData();
-        formData.append('astro_cache_file', file);
+        formData.append('cache_file', file);
         formData.append('csrfmiddlewaretoken', document.querySelector('[name=csrfmiddlewaretoken]').value);
 
         const statusDiv = document.getElementById('loadStatus');
         statusDiv.style.display = 'block';
         statusDiv.className = 'alert alert-info';
-        statusDiv.textContent = 'Converting cache file to B50 format...';
+        statusDiv.textContent = 'Converting cache file and loading scores...';
 
         // Hide B50 download button initially
         document.getElementById('downloadB50Btn').style.display = 'none';
 
-        fetch('{% url "convert_cache_to_b50_direct" %}', {
+        fetch('{% url "convert_cache_to_all_scores" %}', {
           method: 'POST',
           body: formData
         })
@@ -876,8 +901,27 @@
             statusDiv.className = 'alert alert-success';
             statusDiv.textContent = data.message;
             
-            // Show B50 download button
-            document.getElementById('downloadB50Btn').style.display = 'inline-block';
+            // Store the B35+15 data in localStorage and update grid display
+            if (data.b35_15_data) {
+              localStorage.setItem('maimai_b50_data', JSON.stringify(data.b35_15_data));
+              updateDisplay();
+              
+              // Also update tables with ALL scores (not just B35+15)
+              if (data.data) {
+                updateSongTable('old', data.data.old_songs);
+                updateSongTable('new', data.data.new_songs);
+                
+                // Update table headers to remove "Best X" text
+                const oldTableHeader = document.getElementById('oldSongsTableHeader');
+                const newTableHeader = document.getElementById('newSongsTableHeader');
+                if (oldTableHeader) {
+                  oldTableHeader.textContent = `Old Songs (${data.data.old_songs.length})`;
+                }
+                if (newTableHeader) {
+                  newTableHeader.textContent = `New Songs (${data.data.new_songs.length})`;
+                }
+              }
+            }
             
             setTimeout(() => {
               statusDiv.style.display = 'none';
@@ -1176,7 +1220,7 @@
       </table>
     </div>
 
-      <h2>Old Songs (Table View)</h2>
+      <h2 id="oldSongsTableHeader">Old Songs (Table View)</h2>
     <div class="table-responsive mb-4">
       <table class="table table-striped table-bordered align-middle">
         <thead class="table-dark">
@@ -1210,7 +1254,7 @@
       </table>
     </div>
 
-    <h2>New Songs</h2>
+    <h2 id="newSongsTableHeader">New Songs</h2>
     <div class="table-responsive">
       <table class="table table-striped table-bordered align-middle">
         <thead class="table-dark">

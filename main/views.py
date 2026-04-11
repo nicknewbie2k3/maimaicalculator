@@ -667,344 +667,52 @@ def download_converted_b50(request):
     return JsonResponse({'status': 'error', 'message': 'Invalid request method.'})
 
 def convert_cache_data_to_b50_format(cache_data):
-    """Convert AstroDX cache data structure to B50 format."""
+    """Convert AstroDX cache data structure OR already converted B50 data to B50 format.
+    Uses the accurate processing logic from convert_cache_data_to_all_scores_format, then selects top B50."""
     try:
+        print("Converting cache data using accurate all_scores processing logic...")
+        
+        # Use the accurate processing from the all_scores function to get all songs first
+        all_scores_data = convert_cache_data_to_all_scores_format(cache_data)
+        
+        # Create B50 data structure from the accurately processed all_scores
         b50_data = {
             'export_info': {
                 'version': '2.0',
                 'export_date': datetime.now().strftime('%Y-%m-%d'),
                 'total_songs': 0,
-                'note': 'Converted from AstroDX cache file'
+                'note': 'Converted from AstroDX cache file using accurate processing logic'
             },
             'old_songs': [],
             'new_songs': []
         }
         
-        # Extract level_metadata from cache
-        level_metadata = cache_data.get('level_metadata', {})
+        # Get all songs from the accurate processing
+        all_old_songs = all_scores_data['old_songs']
+        all_new_songs = all_scores_data['new_songs']
         
-        if not level_metadata:
-            print("No level_metadata found in cache data")
-            return b50_data
+        print(f"Accurate processing found: {len(all_old_songs)} old songs, {len(all_new_songs)} new songs")
         
-        # Preprocess song names to handle chart type disambiguation
-        # Collect all song titles and group by base name
-        song_titles_by_base = {}
-        for song_key, song_data in level_metadata.items():
-            if not isinstance(song_data, dict):
-                continue
-            
-            song_name = song_data.get('title', song_key).strip()
-            clean_song_name = song_name.replace('\r\n', '').replace('\n', '').strip()
-            
-            if not clean_song_name:
-                continue
-            
-            # Extract base name (remove [DX] or [ST] tags)
-            base_name = clean_song_name
-            chart_type = None
-            
-            if clean_song_name.endswith(' [DX]'):
-                base_name = clean_song_name[:-5]  # Remove ' [DX]'
-                chart_type = 'DX'
-            elif clean_song_name.endswith(' [ST]'):
-                base_name = clean_song_name[:-5]  # Remove ' [ST]'
-                chart_type = 'ST'
-            
-            if base_name not in song_titles_by_base:
-                song_titles_by_base[base_name] = []
-            
-            song_titles_by_base[base_name].append({
-                'song_key': song_key,
-                'original_name': clean_song_name,
-                'chart_type': chart_type
-            })
-        
-        # Process each group to add missing chart type tags
-        for base_name, songs in song_titles_by_base.items():
-            if len(songs) == 2:  # Only process if there are exactly 2 songs with same base name
-                song1, song2 = songs
-                
-                # Case 1: One has [DX], one doesn't - add [ST] to the one without
-                if (song1['chart_type'] == 'DX' and song2['chart_type'] is None):
-                    new_name = f"{base_name} [ST]"
-                    level_metadata[song2['song_key']]['title'] = new_name
-                    print(f"Added [ST] tag: {song2['original_name']} -> {new_name}")
-                elif (song2['chart_type'] == 'DX' and song1['chart_type'] is None):
-                    new_name = f"{base_name} [ST]"
-                    level_metadata[song1['song_key']]['title'] = new_name
-                    print(f"Added [ST] tag: {song1['original_name']} -> {new_name}")
-                
-                # Case 2: One has [ST], one doesn't - add [DX] to the one without  
-                elif (song1['chart_type'] == 'ST' and song2['chart_type'] is None):
-                    new_name = f"{base_name} [DX]"
-                    level_metadata[song2['song_key']]['title'] = new_name
-                    print(f"Added [DX] tag: {song2['original_name']} -> {new_name}")
-                elif (song2['chart_type'] == 'ST' and song1['chart_type'] is None):
-                    new_name = f"{base_name} [DX]"
-                    level_metadata[song1['song_key']]['title'] = new_name
-                    print(f"Added [DX] tag: {song1['original_name']} -> {new_name}")
-        
-        for song_key, song_data in level_metadata.items():
-            if not isinstance(song_data, dict):
-                continue
-                
-            # Use the title from song_data, fallback to song_key
-            song_name = song_data.get('title', song_key).strip()
-            
-            # Clean up song name (remove extra whitespace/newlines)
-            clean_song_name = song_name.replace('\r\n', '').replace('\n', '').strip()
-            if not clean_song_name:
-                continue
-            
-            # Get difficulties array (this is the correct structure for AstroDX)
-            difficulties_array = song_data.get('difficulties', [])
-            if not isinstance(difficulties_array, list):
-                continue
-            
-            # Process each difficulty in the array
-            for difficulty_obj in difficulties_array:
-                if not isinstance(difficulty_obj, dict):
-                    continue
-                
-                # Extract difficulty info
-                difficulty_alias = difficulty_obj.get('alias', '')
-                stats = difficulty_obj.get('stats', {})
-                
-                if not isinstance(stats, dict):
-                    continue
-                
-                # Extract achievement rate from stats
-                achievement_rate = stats.get('achievementRate', 0)
-                
-                # Skip songs without play data (achievementRate = 0)
-                if achievement_rate == 0:
-                    continue
-                
-                # Search for song in database using the same method as the main project
-                song_db = None
-                
-                # First try exact match
-                try:
-                    song_db = MaimaiSong.objects.get(title=clean_song_name)
-                except MaimaiSong.DoesNotExist:
-                    # Try matching with [DX] and [ST] tags
-                    possible_matches = MaimaiSong.objects.filter(
-                        Q(title=f"{clean_song_name} [DX]") | 
-                        Q(title=f"{clean_song_name} [ST]")
-                    )
-                    
-                    if possible_matches.exists():
-                        song_db = possible_matches.first()
-                        print(f'Note: Matched "{clean_song_name}" to "{song_db.title}"')
-                
-                # If still not found, try case-insensitive exact match
-                if not song_db:
-                    song_db = MaimaiSong.objects.filter(title__iexact=clean_song_name).first()
-                
-                # If still not found, try checking aliases
-                if not song_db:
-                    # Search in songs that have aliases containing this song name
-                    songs_with_aliases = MaimaiSong.objects.filter(aliases__isnull=False)
-                    for song in songs_with_aliases:
-                        aliases_list = song.get_aliases_list()
-                        if any(clean_song_name.lower() == alias.lower() for alias in aliases_list):
-                            song_db = song
-                            break
-                
-                # If still not found, try partial match in aliases
-                if not song_db:
-                    songs_with_aliases = MaimaiSong.objects.filter(aliases__isnull=False)
-                    for song in songs_with_aliases:
-                        aliases_list = song.get_aliases_list()
-                        if any(clean_song_name.lower() in alias.lower() for alias in aliases_list):
-                            song_db = song
-                            break
-                
-                # Final fallback: partial match in title
-                if not song_db:
-                    song_db = MaimaiSong.objects.filter(title__icontains=clean_song_name).first()
-                
-                # Skip if we can't find the song in database
-                if not song_db:
-                    print(f"Song not found in database: {clean_song_name}")
-                    continue
-                
-                # Map difficulty alias to database field and get chart difficulty
-                chart_difficulty = None
-                difficulty_type_mapped = difficulty_alias
-                
-                if difficulty_alias.lower() in ['basic', 'bas', 'bsc']:
-                    chart_difficulty = song_db.lev_bas
-                    difficulty_type_mapped = 'Basic'
-                elif difficulty_alias.lower() in ['advanced', 'adv']:
-                    chart_difficulty = song_db.lev_adv
-                    difficulty_type_mapped = 'Advanced'
-                elif difficulty_alias.lower() in ['expert', 'exp']:
-                    chart_difficulty = song_db.lev_exp
-                    difficulty_type_mapped = 'Expert'
-                elif difficulty_alias.lower() in ['master', 'mas']:
-                    chart_difficulty = song_db.lev_mas
-                    difficulty_type_mapped = 'Master'
-                elif difficulty_alias.lower() in ['remaster', 'remas', 're:master']:
-                    chart_difficulty = song_db.lev_remas
-                    difficulty_type_mapped = 'Re:Master'
-                
-                # Skip if we don't have chart difficulty or it wasn't found
-                if not chart_difficulty:
-                    print(f"Chart difficulty not found for {clean_song_name} - {difficulty_alias}")
-                    continue
-                
-                chart_difficulty = float(chart_difficulty)
-                
-                
-                # Calculate rank based on achievement using the same system as the main calculator
-                rank = ""
-                achievement_decimal = Decimal(str(achievement_rate))
-                if Decimal('60') <= achievement_decimal < Decimal('70'):
-                    rank = 'B'
-                elif Decimal('70') <= achievement_decimal < Decimal('75'):
-                    rank = '2B'
-                elif Decimal('75') <= achievement_decimal < Decimal('80'):
-                    rank = '3B'
-                elif Decimal('80') <= achievement_decimal < Decimal('90'):
-                    rank = 'A'
-                elif Decimal('90') <= achievement_decimal < Decimal('94'):
-                    rank = '2A'
-                elif Decimal('94') <= achievement_decimal < Decimal('97'):
-                    rank = '3A'
-                elif Decimal('97') <= achievement_decimal < Decimal('98'):
-                    rank = 'S'
-                elif Decimal('98') <= achievement_decimal < Decimal('99'):
-                    rank = 'S+'
-                elif Decimal('99') <= achievement_decimal < Decimal('99.5'):
-                    rank = '2S'
-                elif Decimal('99.5') <= achievement_decimal < Decimal('100'):
-                    rank = '2S+'
-                elif Decimal('100') <= achievement_decimal < Decimal('100.5'):
-                    rank = '3S'
-                elif achievement_decimal >= Decimal('100.5'):
-                    rank = '3S+'
-                else:
-                    rank = 'B'
-
-                # Use the same coefficient table as the main calculator
-                coefficients = {
-                    'B': Decimal('9.6'),
-                    '2B': Decimal('11.2'),
-                    '3B': Decimal('12'),
-                    'A': Decimal('13.6'),
-                    '2A': Decimal('15.2'),
-                    '3A': Decimal('16.8'),
-                    'S': Decimal('20.0'),
-                    'S+': Decimal('20.3'),
-                    '2S': Decimal('20.8'),
-                    '2S+': Decimal('21.1'),
-                    '3S': Decimal('21.6'),
-                    '3S+': Decimal('22.4'),
-                }
-                coefficient = coefficients.get(rank, Decimal('0'))
-                
-                # Cap achievement at 100.5 for calculation only (same as main calculator)
-                achievement_for_calc = achievement_decimal
-                if achievement_for_calc > Decimal('100.5'):
-                    achievement_for_calc = Decimal('100.5')
-                
-                # Calculate rating using the same method as main calculator
-                chart_difficulty_decimal = Decimal(str(chart_difficulty))
-                calculated_rating = (chart_difficulty_decimal * coefficient * achievement_for_calc / 100).to_integral_value(rounding=ROUND_DOWN)
-                
-                # Get version from database (fallback to 'Unknown' if not set)
-                version = song_db.version or 'Unknown'
-                
-                # Use the database title if it has chart type tags, otherwise use cleaned cache name
-                final_song_name = clean_song_name
-                if song_db.title and (' [DX]' in song_db.title or ' [ST]' in song_db.title):
-                    final_song_name = song_db.title
-                    print(f"Using database title with chart tag: {clean_song_name} -> {final_song_name}")
-                else:
-                    # If no chart type tag in matched database title, check if this song should have one
-                    # by looking for other variants in the database
-                    other_variants = MaimaiSong.objects.filter(
-                        Q(title=f"{clean_song_name} [DX]") | 
-                        Q(title=f"{clean_song_name} [ST]")
-                    ).exclude(id=song_db.id)
-                    
-                    if other_variants.exists():
-                        # If other chart type variants exist, determine which one this should be
-                        has_dx = other_variants.filter(title__endswith=' [DX]').exists()
-                        has_st = other_variants.filter(title__endswith=' [ST]').exists()
-                        
-                        # If there's a DX variant, this should be ST
-                        if has_dx:
-                            final_song_name = f"{clean_song_name} [ST]"
-                            print(f"Added [ST] tag due to DX variant existing: {clean_song_name} -> {final_song_name}")
-                        # If there's a ST variant, this should be DX  
-                        elif has_st:
-                            final_song_name = f"{clean_song_name} [DX]"
-                            print(f"Added [DX] tag due to ST variant existing: {clean_song_name} -> {final_song_name}")
-                    else:
-                        # Check if the found song itself has a chart_type field we can use
-                        if hasattr(song_db, 'chart_type') and song_db.chart_type:
-                            if song_db.chart_type.upper() == 'DX':
-                                final_song_name = f"{clean_song_name} [DX]"
-                                print(f"Added [DX] tag from chart_type field: {clean_song_name} -> {final_song_name}")
-                            elif song_db.chart_type.upper() in ['STD', 'ST']:
-                                final_song_name = f"{clean_song_name} [ST]"
-                                print(f"Added [ST] tag from chart_type field: {clean_song_name} -> {final_song_name}")
-                
-                # Create song entry
-                song_entry = {
-                    'song_name': final_song_name,
-                    'difficulty_type': difficulty_type_mapped,
-                    'rank': rank,
-                    'achievement': float(achievement_rate),
-                    'chart_difficulty': float(chart_difficulty),
-                    'calculated_rating': int(calculated_rating),
-                    'version': version
-                }
-                
-                # Categorize as old or new song based on version
-                # PRiSM PLUS is the cutoff - everything before PRiSM PLUS is old, PRiSM PLUS+ is new
-                version_lower = version.lower()
-                
-                # Define specific new versions (PRiSM PLUS and onwards)
-                new_versions = [
-                    'prism plus', 'circle'
-                ]
-                
-                # Check if it's explicitly a new version (PRiSM PLUS or later)
-                is_new_version = any(new_ver in version_lower for new_ver in new_versions)
-                
-                if is_new_version:
-                    b50_data['new_songs'].append(song_entry)
-                else:
-                    # Everything else (including UNiVERSE, FESTiVAL, BUDDiES, etc.) is old
-                    b50_data['old_songs'].append(song_entry)
-        
-        # Sort by rating (highest first), then by achievement for ties, and limit to top 35 old + 15 new
-        b50_data['old_songs'].sort(key=lambda x: (x['calculated_rating'], x['achievement']), reverse=True)
-        b50_data['new_songs'].sort(key=lambda x: (x['calculated_rating'], x['achievement']), reverse=True)
-        
-        b50_data['old_songs'] = b50_data['old_songs'][:35]
-        b50_data['new_songs'] = b50_data['new_songs'][:15]
+        # NOW SELECT B50: Songs are already sorted by the all_scores function (highest first)
+        # Select top 35 old + 15 new
+        b50_data['old_songs'] = all_old_songs[:35]
+        b50_data['new_songs'] = all_new_songs[:15]
         
         # Post-process song names to ensure proper [STD] and [DX] tags in final output
         def format_output_tags(songs_list):
             for song in songs_list:
                 song_name = song['song_name']
-                # Convert [ST] tags back to [STD] for output
+                # Convert [ST] tags back to [STD] for output consistency
                 if song_name.endswith(' [ST]'):
                     song['song_name'] = song_name[:-5] + ' [STD]'
-                # Ensure [DX] tags remain as [DX]
-                # (no change needed for [DX] tags)
+                # [DX] tags remain as [DX] - no change needed
         
         format_output_tags(b50_data['old_songs'])
         format_output_tags(b50_data['new_songs'])
         
         b50_data['export_info']['total_songs'] = len(b50_data['old_songs']) + len(b50_data['new_songs'])
         
-        print(f"Converted cache data: {len(b50_data['old_songs'])} old songs, {len(b50_data['new_songs'])} new songs")
+        print(f"B50 selection complete: {len(b50_data['old_songs'])} old songs, {len(b50_data['new_songs'])} new songs")
         
         return b50_data
         
@@ -1490,3 +1198,350 @@ def alias_upload(request):
     
     # GET request - just show the page
     return render(request, "main/alias_upload.html")
+
+def convert_cache_to_all_scores(request):
+    """Convert cache file to show ALL played scores (not just B50)."""
+    if request.method == 'POST' and request.FILES.get('cache_file'):
+        try:
+            cache_file = request.FILES['cache_file']
+            
+            # Read and decompress the cache file using same logic as existing functions
+            cache_data = None
+            original_filename = cache_file.name
+            
+            try:
+                # Read the uploaded file content
+                file_content = cache_file.read()
+                
+                # Try to parse as uncompressed JSON first
+                try:
+                    decompressed_text = file_content.decode('utf-8')
+                    cache_data = json.loads(decompressed_text)
+                    print("Successfully loaded as uncompressed JSON")
+                except (UnicodeDecodeError, json.JSONDecodeError):
+                    pass
+                
+                # If not JSON, try different decompression methods
+                if cache_data is None:
+                    compression_methods = [
+                        ("gzip", lambda x: gzip.decompress(x)),
+                        ("deflate", lambda x: zlib.decompress(x)),
+                        ("deflate_raw", lambda x: zlib.decompress(x, -zlib.MAX_WBITS)),
+                        ("bzip2", lambda x: bz2.decompress(x)),
+                        ("deflate_auto", lambda x: zlib.decompress(x, 16 + zlib.MAX_WBITS)),
+                    ]
+                    
+                    for method_name, decompress_func in compression_methods:
+                        try:
+                            decompressed_bytes = decompress_func(file_content)
+                            decompressed_text = decompressed_bytes.decode('utf-8')
+                            cache_data = json.loads(decompressed_text)
+                            print(f"Successfully decompressed using {method_name}")
+                            break
+                        except Exception:
+                            continue
+                
+                # Try different character encodings as final fallback
+                if cache_data is None:
+                    try:
+                        for encoding in ['utf-8', 'utf-16', 'utf-32', 'ascii', 'latin1']:
+                            try:
+                                decoded_text = file_content.decode(encoding)
+                                cache_data = json.loads(decoded_text)
+                                print(f"Successfully loaded using {encoding} encoding")
+                                break
+                            except (UnicodeDecodeError, json.JSONDecodeError):
+                                continue
+                    except Exception:
+                        pass
+                
+                if cache_data is None:
+                    raise Exception('Failed to decompress or decode the file.')
+            
+            except Exception as decomp_error:
+                return JsonResponse({'status': 'error', 'message': f'Failed to decompress or parse file: {str(decomp_error)}'})
+            
+            if not cache_data:
+                return JsonResponse({'status': 'error', 'message': 'Failed to decompress cache file or the file is empty.'})
+            
+            # Convert the cache data to ALL scores format (not just B50)
+            all_scores_data = convert_cache_data_to_all_scores_format(cache_data)
+            
+            if all_scores_data['old_songs'] or all_scores_data['new_songs']:
+                # Also create B35+15 selection for grid display
+                b35_15_data = {
+                    'old_songs': all_scores_data['old_songs'][:35],  # Top 35 old songs (already sorted)
+                    'new_songs': all_scores_data['new_songs'][:15],  # Top 15 new songs (already sorted)
+                }
+                
+                return JsonResponse({
+                    'status': 'success',
+                    'message': f'Cache file successfully converted! Found {len(all_scores_data["old_songs"])} old chart scores and {len(all_scores_data["new_songs"])} new chart scores.',
+                    'data': all_scores_data,
+                    'b35_15_data': b35_15_data  # Add B35+15 selection for grid display
+                })
+            else:
+                return JsonResponse({'status': 'error', 'message': 'No valid song data found in cache file.'})
+                
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': f'Error processing cache file: {str(e)}'})
+    
+    return JsonResponse({'status': 'error', 'message': 'No cache file uploaded or invalid request method.'})
+
+def convert_cache_data_to_all_scores_format(cache_data):
+    """Convert cache data to ALL scores format (not limited to top 50)."""
+    try:
+        all_scores_data = {
+            'export_info': {
+                'version': '2.0',
+                'export_date': datetime.now().strftime('%Y-%m-%d'),
+                'total_songs': 0,
+                'note': 'All played songs from cache file'
+            },
+            'old_songs': [],
+            'new_songs': []
+        }
+        
+        # Extract level_metadata from cache
+        level_metadata = cache_data.get('level_metadata', {})
+        
+        if not level_metadata:
+            print("No level_metadata found in cache data")
+            return all_scores_data
+        
+        for song_key, song_data in level_metadata.items():
+            if not isinstance(song_data, dict):
+                continue
+                
+            # Use the title from song_data, fallback to song_key
+            song_name = song_data.get('title', song_key).strip()
+            
+            # Clean up song name (remove extra whitespace/newlines)
+            clean_song_name = song_name.replace('\r\n', '').replace('\n', '').strip()
+            if not clean_song_name:
+                continue
+            
+            # Get difficulties array
+            difficulties_array = song_data.get('difficulties', [])
+            if not isinstance(difficulties_array, list):
+                continue
+            
+            # Process each difficulty in the array
+            for difficulty_obj in difficulties_array:
+                if not isinstance(difficulty_obj, dict):
+                    continue
+                
+                # Extract difficulty info
+                difficulty_alias = difficulty_obj.get('alias', '')
+                stats = difficulty_obj.get('stats', {})
+                
+                if not isinstance(stats, dict):
+                    continue
+                
+                # Extract achievement rate from stats
+                achievement_rate = stats.get('achievementRate', 0)
+                
+                # Skip songs without play data (achievementRate = 0)
+                if achievement_rate == 0:
+                    continue
+                
+                # Search for song in database using the same method as the main project
+                song_db = None
+                
+                # First try exact match
+                try:
+                    song_db = MaimaiSong.objects.get(title=clean_song_name)
+                except MaimaiSong.DoesNotExist:
+                    # Try matching with [DX] and [STD] tags
+                    possible_matches = MaimaiSong.objects.filter(
+                        Q(title=f"{clean_song_name} [DX]") | 
+                        Q(title=f"{clean_song_name} [STD]")
+                    )
+                    
+                    if possible_matches.exists():
+                        song_db = possible_matches.first()
+                
+                # If still not found, try case-insensitive exact match
+                if not song_db:
+                    song_db = MaimaiSong.objects.filter(title__iexact=clean_song_name).first()
+                
+                # If still not found, try checking aliases
+                if not song_db:
+                    # Search in songs that have aliases containing this song name
+                    songs_with_aliases = MaimaiSong.objects.filter(aliases__isnull=False)
+                    for song in songs_with_aliases:
+                        aliases_list = song.get_aliases_list()
+                        if any(clean_song_name.lower() == alias.lower() for alias in aliases_list):
+                            song_db = song
+                            break
+                
+                # Final fallback: partial match in title
+                if not song_db:
+                    song_db = MaimaiSong.objects.filter(title__icontains=clean_song_name).first()
+                
+                # Skip if we can't find the song in database
+                if not song_db:
+                    print(f"Song not found in database: {clean_song_name}")
+                    continue
+                
+                # Map difficulty alias to database field and get chart difficulty
+                chart_difficulty = None
+                difficulty_type_mapped = difficulty_alias
+                
+                if difficulty_alias.lower() in ['basic', 'bas', 'bsc']:
+                    chart_difficulty = song_db.lev_bas
+                    difficulty_type_mapped = 'Basic'
+                elif difficulty_alias.lower() in ['advanced', 'adv']:
+                    chart_difficulty = song_db.lev_adv
+                    difficulty_type_mapped = 'Advanced'
+                elif difficulty_alias.lower() in ['expert', 'exp']:
+                    chart_difficulty = song_db.lev_exp
+                    difficulty_type_mapped = 'Expert'
+                elif difficulty_alias.lower() in ['master', 'mas']:
+                    chart_difficulty = song_db.lev_mas
+                    difficulty_type_mapped = 'Master'
+                elif difficulty_alias.lower() in ['remaster', 'remas', 're:master']:
+                    chart_difficulty = song_db.lev_remas
+                    difficulty_type_mapped = 'Re:Master'
+                
+                # Skip if we don't have chart difficulty
+                if not chart_difficulty:
+                    print(f"Chart difficulty not found for {clean_song_name} - {difficulty_alias}")
+                    continue
+                
+                chart_difficulty = float(chart_difficulty)
+                
+                # Calculate rank based on achievement using the same system as the main calculator
+                rank = ""
+                achievement_decimal = Decimal(str(achievement_rate))
+                if Decimal('60') <= achievement_decimal < Decimal('70'):
+                    rank = 'B'
+                elif Decimal('70') <= achievement_decimal < Decimal('75'):
+                    rank = '2B'
+                elif Decimal('75') <= achievement_decimal < Decimal('80'):
+                    rank = '3B'
+                elif Decimal('80') <= achievement_decimal < Decimal('90'):
+                    rank = 'A'
+                elif Decimal('90') <= achievement_decimal < Decimal('94'):
+                    rank = '2A'
+                elif Decimal('94') <= achievement_decimal < Decimal('97'):
+                    rank = '3A'
+                elif Decimal('97') <= achievement_decimal < Decimal('98'):
+                    rank = 'S'
+                elif Decimal('98') <= achievement_decimal < Decimal('99'):
+                    rank = 'S+'
+                elif Decimal('99') <= achievement_decimal < Decimal('99.5'):
+                    rank = '2S'
+                elif Decimal('99.5') <= achievement_decimal < Decimal('100'):
+                    rank = '2S+'
+                elif Decimal('100') <= achievement_decimal < Decimal('100.5'):
+                    rank = '3S'
+                elif achievement_decimal >= Decimal('100.5'):
+                    rank = '3S+'
+                else:
+                    rank = 'B'
+
+                # Use the same coefficient table as the main calculator
+                coefficients = {
+                    'B': Decimal('9.6'),
+                    '2B': Decimal('11.2'),
+                    '3B': Decimal('12'),
+                    'A': Decimal('13.6'),
+                    '2A': Decimal('15.2'),
+                    '3A': Decimal('16.8'),
+                    'S': Decimal('20.0'),
+                    'S+': Decimal('20.3'),
+                    '2S': Decimal('20.8'),
+                    '2S+': Decimal('21.1'),
+                    '3S': Decimal('21.6'),
+                    '3S+': Decimal('22.4'),
+                }
+                coefficient = coefficients.get(rank, Decimal('0'))
+                
+                # Cap achievement at 100.5 for calculation only
+                achievement_for_calc = achievement_decimal
+                if achievement_for_calc > Decimal('100.5'):
+                    achievement_for_calc = Decimal('100.5')
+                
+                # Calculate rating using the same method as main calculator
+                chart_difficulty_decimal = Decimal(str(chart_difficulty))
+                calculated_rating = (chart_difficulty_decimal * coefficient * achievement_for_calc / 100).to_integral_value(rounding=ROUND_DOWN)
+                
+                # Get version from database (fallback to 'Unknown' if not set)
+                version = song_db.version or 'Unknown'
+                
+                # Use the clean song name or database title
+                final_song_name = clean_song_name
+                if song_db.title and (' [DX]' in song_db.title or ' [STD]' in song_db.title):
+                    final_song_name = song_db.title
+                else:
+                    # Check if the found song has a chart_type field we can use
+                    if hasattr(song_db, 'chart_type') and song_db.chart_type:
+                        if song_db.chart_type.upper() == 'DX':
+                            final_song_name = f"{clean_song_name} [DX]"
+                        elif song_db.chart_type.upper() in ['STD', 'ST']:
+                            final_song_name = f"{clean_song_name} [STD]"
+                
+                # Create song entry
+                song_entry = {
+                    'song_name': final_song_name,
+                    'difficulty_type': difficulty_type_mapped,
+                    'rank': rank,
+                    'achievement': float(achievement_rate),
+                    'chart_difficulty': float(chart_difficulty),
+                    'calculated_rating': int(calculated_rating),
+                    'version': version
+                }
+                
+                # Categorize as old or new song based on version
+                version_lower = version.lower()
+                
+                # Define specific new versions (PRiSM PLUS and onwards)
+                new_versions = [
+                    'prism plus', 'circle'
+                ]
+                
+                # Check if it's explicitly a new version (PRiSM PLUS or later)
+                is_new_version = any(new_ver in version_lower for new_ver in new_versions)
+                
+                if is_new_version:
+                    all_scores_data['new_songs'].append(song_entry)
+                else:
+                    # Everything else (including UNiVERSE, FESTiVAL, BUDDiES, etc.) is old
+                    all_scores_data['old_songs'].append(song_entry)
+        
+        # Sort by rating (highest first), then by achievement for ties
+        # NOTE: Unlike B50 conversion, we do NOT limit the results here - we keep ALL scores
+        all_scores_data['old_songs'].sort(key=lambda x: (x['calculated_rating'], x['achievement']), reverse=True)
+        all_scores_data['new_songs'].sort(key=lambda x: (x['calculated_rating'], x['achievement']), reverse=True)
+        
+        # Remove duplicate entries (same song + difficulty) keeping only the highest score
+        def deduplicate_songs(songs_list):
+            """Keep only the highest score for each unique song+difficulty combination."""
+            seen = {}
+            deduplicated = []
+            
+            for song in songs_list:
+                key = (song['song_name'], song['difficulty_type'])
+                if key not in seen or song['calculated_rating'] > seen[key]['calculated_rating'] or \
+                   (song['calculated_rating'] == seen[key]['calculated_rating'] and song['achievement'] > seen[key]['achievement']):
+                    seen[key] = song
+                    
+            # Convert back to list, sorted by rating
+            return sorted(seen.values(), key=lambda x: (x['calculated_rating'], x['achievement']), reverse=True)
+        
+        # Apply deduplication to both old and new songs
+        all_scores_data['old_songs'] = deduplicate_songs(all_scores_data['old_songs'])
+        all_scores_data['new_songs'] = deduplicate_songs(all_scores_data['new_songs'])
+        
+        all_scores_data['export_info']['total_songs'] = len(all_scores_data['old_songs']) + len(all_scores_data['new_songs'])
+        
+        print(f"Converted cache data to ALL scores: {len(all_scores_data['old_songs'])} old songs, {len(all_scores_data['new_songs'])} new songs (after deduplication)")
+        
+        return all_scores_data
+        
+    except Exception as e:
+        print(f"Error converting cache data: {e}")
+        import traceback
+        traceback.print_exc()
+        return {'old_songs': [], 'new_songs': [], 'export_info': {'version': '2.0', 'export_date': datetime.now().strftime('%Y-%m-%d'), 'total_songs': 0, 'note': f'Conversion failed: {str(e)}'}}
