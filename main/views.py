@@ -1309,6 +1309,68 @@ def convert_cache_data_to_all_scores_format(cache_data):
             print("No level_metadata found in cache data")
             return all_scores_data
         
+        # PREPROCESSING: Group songs by base name and assign complementary tags
+        print("Starting tag preprocessing for paired songs...")
+        song_groups = {}
+        
+        # Step 1: Group songs by base name
+        for song_key, song_data in level_metadata.items():
+            if not isinstance(song_data, dict):
+                continue
+                
+            title = song_data.get('title', song_key).strip()
+            title = title.replace('\r\n', '').replace('\n', '').strip()
+            
+            if not title:
+                continue
+            
+            # Extract base name and chart tag
+            base_name = title
+            chart_tag = None
+            
+            if title.endswith(' [DX]'):
+                base_name = title[:-5]  # Remove ' [DX]'
+                chart_tag = 'DX'
+            elif title.endswith(' [ST]'):
+                base_name = title[:-5]  # Remove ' [ST]'
+                chart_tag = 'ST'
+            elif title.endswith(' [STD]'):
+                base_name = title[:-6]  # Remove ' [STD]'
+                chart_tag = 'ST'  # Treat STD as ST for processing
+            
+            if base_name not in song_groups:
+                song_groups[base_name] = []
+            
+            song_groups[base_name].append({
+                'song_key': song_key,
+                'original_title': title,
+                'base_name': base_name,
+                'chart_tag': chart_tag
+            })
+        
+        # Step 2: Process groups with exactly 2 songs for tag assignment
+        for base_name, songs in song_groups.items():
+            if len(songs) == 2:
+                song1, song2 = songs
+                
+                # Case 1: One has tag, one doesn't - assign complementary tag
+                if song1['chart_tag'] and not song2['chart_tag']:
+                    complementary_tag = 'DX' if song1['chart_tag'] == 'ST' else 'ST'
+                    new_title = f"{base_name} [{complementary_tag}]"
+                    level_metadata[song2['song_key']]['title'] = new_title
+                    print(f"Tag assignment: '{song2['original_title']}' → '{new_title}'")
+                    
+                elif song2['chart_tag'] and not song1['chart_tag']:
+                    complementary_tag = 'DX' if song2['chart_tag'] == 'ST' else 'ST'
+                    new_title = f"{base_name} [{complementary_tag}]"
+                    level_metadata[song1['song_key']]['title'] = new_title
+                    print(f"Tag assignment: '{song1['original_title']}' → '{new_title}'")
+                
+                # Case 2: Neither has tag - no action (let database lookup handle it)
+                # Case 3: Both have tags - no action (already properly tagged)
+        
+        print("Tag preprocessing completed.")
+        
         for song_key, song_data in level_metadata.items():
             if not isinstance(song_data, dict):
                 continue
