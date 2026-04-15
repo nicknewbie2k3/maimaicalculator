@@ -602,10 +602,18 @@
       function updateDisplay() {
         const rawB50Data = getB50Data();
         
+        // Quick check: if no data, skip processing
+        if (!rawB50Data.old_songs || !rawB50Data.new_songs || 
+            (rawB50Data.old_songs.length === 0 && rawB50Data.new_songs.length === 0)) {
+          // Clear displays and exit early
+          clearAllDisplays();
+          return;
+        }
+        
         // Apply proper old/new chart categorization
         const b50Data = recategorizeB50Data(rawB50Data);
         
-        // Save the recategorized data back to localStorage
+        // Save the recategorized data back to localStorage (only if changed)
         saveB50Data(b50Data);
         
         // Calculate ratings
@@ -784,7 +792,7 @@
             <span class="song-title-oneline ${chartTypeClass}">${song.song_name}</span>
             ${songInfo.image_url ? `
               <a href="${songInfo.image_url}" target="_blank" class="song-cell-image">
-                <img src="${songInfo.image_url}" alt="Image">
+                <img src="${songInfo.image_url}" alt="Image" loading="lazy">
               </a>
             ` : ''}
             <div class="song-cell-bottom-left">
@@ -797,16 +805,24 @@
         `;
       }
 
-      // Initialize display on page load
-      document.addEventListener('DOMContentLoaded', function() {
-        // Validate and fix existing localStorage data
-        const existingData = getB50Data();
-        if (existingData.old_songs.length > 0 || existingData.new_songs.length > 0) {
-          // Re-categorize existing data to fix any categorization issues
-          const fixedData = recategorizeB50Data(existingData);
-          saveB50Data(fixedData);
+      // Helper function to clear all displays when no data
+      function clearAllDisplays() {
+        const gridContainer = document.getElementById('b50GridContainer');
+        const gridTable = gridContainer.querySelector('table tbody');
+        if (gridTable) {
+          gridTable.innerHTML = '<tr><td colspan="5" class="text-center p-4">No B50 data. Add songs or upload a cache file.</td></tr>';
         }
         
+        // Clear table headers
+        const h2 = document.querySelector('h2');
+        const h4 = document.querySelector('h4');
+        if (h2) h2.textContent = 'Total Rating: 0';
+        if (h4) h4.innerHTML = 'Old Chart Total Rating: 0 | New Chart Total Rating: 0 | Total Average Rating: 0';
+      }
+
+      // Initialize display on page load
+      document.addEventListener('DOMContentLoaded', function() {
+        // Just update display - it will handle recategorization internally
         updateDisplay();
       });
     </script>
