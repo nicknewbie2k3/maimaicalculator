@@ -1,3 +1,4 @@
+import html2canvas from 'html2canvas-pro'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { usePage } from '@inertiajs/react'
 import MainLayout from '../layouts/MainLayout'
@@ -358,10 +359,10 @@ export default function Index() {
   }
 
   async function printB50() {
-    if (!gridRef.current || !window.html2canvas) return
+    if (!gridRef.current) return
     showStatus('Generating image...', 'info', 0)
     try {
-      const canvas = await window.html2canvas(gridRef.current, { backgroundColor: '#fff', scale: 2, useCORS: true })
+      const canvas = await html2canvas(gridRef.current, { backgroundColor: '#fff', scale: 2, useCORS: true })
       const a = document.createElement('a'); a.download = 'maimai_b50_grid.png'; a.href = canvas.toDataURL('image/png')
       a.click()
       showStatus('Image generated!', 'success')
@@ -503,7 +504,7 @@ export default function Index() {
         </p>
 
         <h2 className="text-xl font-semibold mt-4 mb-3">All Songs (Old + New) Grid View</h2>
-        <div ref={gridRef} className="wide-grid-container mb-6">
+        <div ref={gridRef} className="wide-grid-container mb-6" style={{ background: '#fff', color: '#111' }}>
           <table className="wide-grid-table" style={{ tableLayout: 'fixed', borderCollapse: 'collapse' }}>
             <tbody>
               {Array.from({ length: 10 }, (_, row) => (
