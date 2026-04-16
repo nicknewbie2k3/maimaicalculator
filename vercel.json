@@ -1,8 +1,12 @@
 {
-  "builds": [
-    { "src": "api/index.py", "use": "@vercel/python" }
-  ],
-  "routes": [
-    { "src": "/(.*)", "dest": "api/index.py" }
+  "outputDirectory": "staticfiles",
+  "functions": {
+    "api/index.py": {
+      "includeFiles": "{main/**,templates/**,staticfiles/**,mysite/**}"
+    }
+  },
+  "rewrites": [
+    { "source": "/static/(.*)", "destination": "/$1" },
+    { "source": "/(.*)", "destination": "/api/index.py" }
   ]
 }
