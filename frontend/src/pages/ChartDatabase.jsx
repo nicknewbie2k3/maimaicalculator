@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react'
-import { usePage, router } from '@inertiajs/react'
+import { usePage, router, Link } from '@inertiajs/react'
 import MainLayout from '../layouts/MainLayout'
 
 function getCsrf() {
@@ -169,9 +169,9 @@ export default function ChartDatabase() {
           </div>
           <div className="col-md-12 mt-2">
             <button type="submit" className="btn btn-primary">Filter</button>
-            <a href="/chart-database/" className="btn btn-secondary ms-2">Reset</a>
+            <Link href="/chart-database/" className="btn btn-secondary ms-2">Reset</Link>
             <a href="/chart-database/download/" className="btn btn-success ms-3"><i className="fas fa-download me-1" />Download Full Database (JSON)</a>
-            <a href="/chart-database/alias-upload/" className="btn btn-info ms-3"><i className="fas fa-file-upload me-1" />Add Alias via File</a>
+            <Link href="/chart-database/alias-upload/" className="btn btn-info ms-3"><i className="fas fa-file-upload me-1" />Add Alias via File</Link>
           </div>
         </form>
 
@@ -217,19 +217,27 @@ export default function ChartDatabase() {
         <nav>
           <ul className="pagination justify-content-center">
             <li className={`page-item${!pagination.hasPrevious ? ' disabled' : ''}`}>
-              <a className="page-link" href={pagination.hasPrevious ? pageUrl(1) : '#'}>&laquo; First</a>
+              {pagination.hasPrevious
+                ? <Link className="page-link" href={pageUrl(1)}>&laquo; First</Link>
+                : <span className="page-link">&laquo; First</span>}
             </li>
             <li className={`page-item${!pagination.hasPrevious ? ' disabled' : ''}`}>
-              <a className="page-link" href={pagination.hasPrevious ? pageUrl(pagination.previousPage) : '#'}>&lsaquo; Prev</a>
+              {pagination.hasPrevious
+                ? <Link className="page-link" href={pageUrl(pagination.previousPage)}>&lsaquo; Prev</Link>
+                : <span className="page-link">&lsaquo; Prev</span>}
             </li>
             <li className="page-item disabled">
               <span className="page-link">Page {pagination.page} of {pagination.numPages}</span>
             </li>
             <li className={`page-item${!pagination.hasNext ? ' disabled' : ''}`}>
-              <a className="page-link" href={pagination.hasNext ? pageUrl(pagination.nextPage) : '#'}>Next &rsaquo;</a>
+              {pagination.hasNext
+                ? <Link className="page-link" href={pageUrl(pagination.nextPage)}>Next &rsaquo;</Link>
+                : <span className="page-link">Next &rsaquo;</span>}
             </li>
             <li className={`page-item${!pagination.hasNext ? ' disabled' : ''}`}>
-              <a className="page-link" href={pagination.hasNext ? pageUrl(pagination.numPages) : '#'}>Last &raquo;</a>
+              {pagination.hasNext
+                ? <Link className="page-link" href={pageUrl(pagination.numPages)}>Last &raquo;</Link>
+                : <span className="page-link">Last &raquo;</span>}
             </li>
           </ul>
         </nav>
