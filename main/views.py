@@ -78,6 +78,23 @@ def find_maimai_song_by_title(title):
         _normalize_for_lookup('Bad Apple!! feat.nomico (Tetsuya Komuro Remix)').lower(): 'Bad Apple!! feat.nomico (Tetsuya Komuro Remix) [DX]',
     }
 
+    # Additional mappings discovered by cache vs DB analysis
+    # (normalized cache title -> canonical DB title)
+    special_map.update({
+        _normalize_for_lookup('ラストピースに祝福と栄光を').lower(): 'ラストピースに祝福と栄光を [DX]',
+        _normalize_for_lookup('ジングルベル[DX]').lower(): 'ジングルベル [DX]',
+        _normalize_for_lookup('君だったから').lower(): '君だったから [DX]',
+        _normalize_for_lookup('Ievan Polkka').lower(): 'Ievan Polkka [STD]',
+        _normalize_for_lookup('ナイト・オブ・ナイツ[DX]').lower(): 'ナイト・オブ・ナイツ [DX]',
+        _normalize_for_lookup('響縁[DX]').lower(): '響縁 [DX]',
+        _normalize_for_lookup('JINGLE DEATH').lower(): 'JINGLE DEATH [DX]',
+        _normalize_for_lookup('鬼女紅妖').lower(): '鬼女紅妖 [DX]',
+        _normalize_for_lookup('ソテリア').lower(): 'ソテリア [DX]',
+        _normalize_for_lookup('Sky Trails').lower(): 'Sky Trails [DX]',
+        _normalize_for_lookup('ミクマリ').lower(): 'ミクマリ [DX]',
+        _normalize_for_lookup('Treasure Chest Expedition').lower(): 'Treasure Chest Expedition [DX]',
+    })
+
     normalized_input = _normalize_for_lookup(title)
     # If a special-case mapping exists, use it as the raw title to query
     if normalized_input.lower() in special_map:
@@ -109,10 +126,23 @@ def find_maimai_song_by_title(title):
     for tv in tilde_variants:
         base_variants.add(canonical_base.replace('~', tv))
 
+    # Determine requested tag from input and build candidate titles
+    requested_tag = None
+    if re.search(r'\[\s*DX\s*\]$', t, re.IGNORECASE):
+        requested_tag = 'DX'
+    elif re.search(r'\[\s*ST\s*\]$', t, re.IGNORECASE) or re.search(r'\[\s*STD\s*\]$', t, re.IGNORECASE):
+        requested_tag = 'STD'
+
+    tag_order = ['STD', 'ST', 'DX']
+    if requested_tag == 'DX':
+        tag_order = ['DX', 'STD', 'ST']
+    elif requested_tag == 'STD':
+        tag_order = ['STD', 'ST', 'DX']
+
     # Build candidate titles from base variants with/without tags
     candidates = []
     for b in base_variants:
-        for tag in ['STD', 'ST', 'DX']:
+        for tag in tag_order:
             candidates.append(f"{b} [{tag}]")
             candidates.append(f"{b}[{tag}]")
         candidates.append(b)
@@ -1463,105 +1493,102 @@ def convert_cache_data_to_all_scores_format(cache_data):
             print("No level_metadata found in cache data")
             return all_scores_data
         
-        # PREPROCESSING: Group songs by base name and assign complementary tags
-        print("Starting tag preprocessing for paired songs...")
-        song_groups = {}
-        
-        # Step 1: Group songs by base name
+        # PREPROCESSING: Better grouping using a canonical base-key and
+        # explicit-vs-untagged check to assign complementary STD/DX tags.
+        print("Starting tag preprocessing for paired songs (canonical grouping)...")
+
+        def _normalize_title_for_group(s: str) -> str:
+            if not s:
+                return ''
+            s = s.strip()
+            # Basic punctuation/width normalization
+            replacements = {
+                '～': '~', '〜': '~', '（': '(', '）': ')', '　': ' ',
+                '＃': '#', '＆': '&', '：': ':', '’': "'", '‘': "'", '“': '"', '”': '"',
+                '—': '-', '–': '-', '。': '.', '、': ',', '．': '.', '･': '･'
+            }
+            for k, v in replacements.items():
+                s = s.replace(k, v)
+            s = re.sub(r'\s+', ' ', s).strip()
+            # Remove trailing chart tag (DX/ST/STD) for canonical base
+            s = re.sub(r'\s*\[(?:DX|ST|STD)\]\s*$', '', s, flags=re.IGNORECASE)
+            return s
+
+        canonical_map = {}
+        # Build canonical groups
         for song_key, song_data in level_metadata.items():
             if not isinstance(song_data, dict):
                 continue
-                
-            title = song_data.get('title', song_key).strip()
+
+            title = song_data.get('title', song_key)
+            if not isinstance(title, str):
+                title = str(title)
             title = title.replace('\r\n', '').replace('\n', '').strip()
-            # Normalize common tilde/wave characters so variants pair correctly
-            # e.g. ASCII ~, fullwidth '～' and wave dash '〜'
             title = title.replace('～', '~').replace('〜', '~')
-            
             if not title:
                 continue
-            
-            # Extract base name and chart tag
-            base_name = title
-            chart_tag = None
-            
-            # Accept both spaced and no-space tag variants (e.g. '[DX]' and ' [DX]')
-            if title.endswith(' [DX]') or title.endswith('[DX]'):
-                if title.endswith(' [DX]'):
-                    base_name = title[:-5].strip()
-                else:
-                    base_name = title[:-4].strip()
-                chart_tag = 'DX'
-            elif title.endswith(' [ST]') or title.endswith('[ST]'):
-                if title.endswith(' [ST]'):
-                    base_name = title[:-5].strip()
-                else:
-                    base_name = title[:-4].strip()
-                chart_tag = 'ST'
-            elif title.endswith(' [STD]') or title.endswith('[STD]'):
-                if title.endswith(' [STD]'):
-                    base_name = title[:-6].strip()
-                else:
-                    base_name = title[:-5].strip()
-                chart_tag = 'ST'  # Treat STD as ST for processing
-            
-            if base_name not in song_groups:
-                song_groups[base_name] = []
-            
-            song_groups[base_name].append({
+
+            canonical_base = _normalize_title_for_group(title)
+            if not canonical_base:
+                continue
+
+            # Detect explicit tag presence in original title
+            explicit_tag = None
+            m = re.search(r'\[(DX)\]', title, re.IGNORECASE)
+            if m:
+                explicit_tag = 'DX'
+            else:
+                m2 = re.search(r'\[(ST|STD)\]', title, re.IGNORECASE)
+                if m2:
+                    explicit_tag = 'ST'
+
+            entry = {
                 'song_key': song_key,
                 'original_title': title,
-                'base_name': base_name,
-                'chart_tag': chart_tag
-            })
-        
-        # Step 2: Process groups with exactly 2 songs for tag assignment
-        for base_name, songs in song_groups.items():
-            if len(songs) == 2:
-                song1, song2 = songs
-                # Case 1: One has tag, one doesn't - apply STD/DX assignment rules
-                if song1['chart_tag'] and not song2['chart_tag']:
-                    ot = song1['original_title']
-                    # If one is DX, the other should be STD
-                    if ot.endswith(' [DX]'):
-                        new_title = f"{base_name} [STD]"
-                        level_metadata[song2['song_key']]['title'] = new_title
-                        print(f"Tag assignment: '{song2['original_title']}' → '{new_title}'")
-                    # If one is ST, convert ST -> STD and make the other DX
-                    elif ot.endswith(' [ST]'):
-                        new_title1 = f"{base_name} [STD]"
-                        level_metadata[song1['song_key']]['title'] = new_title1
-                        print(f"Tag assignment: '{song1['original_title']}' → '{new_title1}'")
-                        new_title2 = f"{base_name} [DX]"
-                        level_metadata[song2['song_key']]['title'] = new_title2
-                        print(f"Tag assignment: '{song2['original_title']}' → '{new_title2}'")
-                    else:
-                        # Default: make the other DX (covers existing STD or unexpected tags)
-                        new_title = f"{base_name} [DX]"
-                        level_metadata[song2['song_key']]['title'] = new_title
-                        print(f"Tag assignment: '{song2['original_title']}' → '{new_title}'")
+                'canonical_base': canonical_base,
+                'explicit_tag': explicit_tag,
+            }
+            canonical_map.setdefault(canonical_base, []).append(entry)
 
-                elif song2['chart_tag'] and not song1['chart_tag']:
-                    ot = song2['original_title']
-                    if ot.endswith(' [DX]'):
-                        new_title = f"{base_name} [STD]"
-                        level_metadata[song1['song_key']]['title'] = new_title
-                        print(f"Tag assignment: '{song1['original_title']}' → '{new_title}'")
-                    elif ot.endswith(' [ST]'):
-                        new_title2 = f"{base_name} [STD]"
-                        level_metadata[song2['song_key']]['title'] = new_title2
-                        print(f"Tag assignment: '{song2['original_title']}' → '{new_title2}'")
-                        new_title1 = f"{base_name} [DX]"
-                        level_metadata[song1['song_key']]['title'] = new_title1
-                        print(f"Tag assignment: '{song1['original_title']}' → '{new_title1}'")
-                    else:
-                        new_title = f"{base_name} [DX]"
-                        level_metadata[song1['song_key']]['title'] = new_title
-                        print(f"Tag assignment: '{song1['original_title']}' → '{new_title}'")
-                
-                # Case 2: Neither has tag - no action (let database lookup handle it)
-                # Case 3: Both have tags - no action (already properly tagged)
-        
+        # For each canonical base, if there are explicit-tagged and untagged entries,
+        # pair them and assign complementary tags (favor DX where indicated).
+        for base, entries in canonical_map.items():
+            if len(entries) < 2:
+                continue
+
+            # Separate explicit-tagged entries and untagged entries
+            tagged = [e for e in entries if e['explicit_tag']]
+            untagged = [e for e in entries if not e['explicit_tag']]
+
+            if not tagged or not untagged:
+                # Nothing to pair in this canonical group
+                continue
+
+            # Choose a display base from the first entry (preserve original formatting)
+            display_base = re.sub(r'\s*\[(?:DX|ST|STD)\]\s*$', '', entries[0]['original_title'], flags=re.IGNORECASE).strip()
+
+            # Pair up tagged vs untagged entries and assign titles
+            # Iterate through tagged entries, match to any remaining untagged entry
+            for t_entry in tagged:
+                if not untagged:
+                    break
+                u_entry = untagged.pop(0)
+                t_tag = t_entry['explicit_tag']
+
+                if t_tag == 'DX':
+                    # Keep tagged entry as DX, mark the untagged as STD
+                    new_untagged_title = f"{display_base} [STD]"
+                    level_metadata[u_entry['song_key']]['title'] = new_untagged_title
+                    print(f"Tag assignment (cache check): '{u_entry['original_title']}' → '{new_untagged_title}'")
+                else:
+                    # If tagged is ST/STD, normalize to [STD] and mark the other as [DX]
+                    new_tagged_title = f"{display_base} [STD]"
+                    new_untagged_title = f"{display_base} [DX]"
+                    level_metadata[t_entry['song_key']]['title'] = new_tagged_title
+                    level_metadata[u_entry['song_key']]['title'] = new_untagged_title
+                    print(f"Tag assignment (cache check): '{t_entry['original_title']}' → '{new_tagged_title}'")
+                    print(f"Tag assignment (cache check): '{u_entry['original_title']}' → '{new_untagged_title}'")
+
         print("Tag preprocessing completed.")
         
         for song_key, song_data in level_metadata.items():
@@ -1630,8 +1657,20 @@ def convert_cache_data_to_all_scores_format(cache_data):
                     elif clean_song_name.endswith(' [STD]'):
                         base_name = clean_song_name[:-6].strip()
 
-                    # Prepare candidate titles for lookup: include [STD]/[ST]/[DX] variants and no-space variants
-                    tags = ['STD', 'ST', 'DX']
+                    # Prefer candidates that match the requested chart tag (DX/STD) if present
+                    requested_tag = None
+                    if re.search(r'\[\s*DX\s*\]$', clean_song_name, re.IGNORECASE):
+                        requested_tag = 'DX'
+                    elif re.search(r'\[\s*ST\s*\]$', clean_song_name, re.IGNORECASE) or re.search(r'\[\s*STD\s*\]$', clean_song_name, re.IGNORECASE):
+                        requested_tag = 'STD'
+
+                    if requested_tag == 'DX':
+                        tags = ['DX', 'STD', 'ST']
+                    elif requested_tag == 'STD':
+                        tags = ['STD', 'ST', 'DX']
+                    else:
+                        tags = ['STD', 'ST', 'DX']
+
                     candidates = []
                     for t in tags:
                         candidates.append(f"{base_name} [{t}]")
@@ -1716,8 +1755,20 @@ def convert_cache_data_to_all_scores_format(cache_data):
                         current_val = None
 
                     if not current_val:
-                        # Candidate title variants
-                        tags = ['STD', 'ST', 'DX']
+                        # Candidate title variants - prefer requested tag order when possible
+                        requested_tag = None
+                        if re.search(r'\[\s*DX\s*\]$', assigned_title, re.IGNORECASE):
+                            requested_tag = 'DX'
+                        elif re.search(r'\[\s*ST\s*\]$', assigned_title, re.IGNORECASE) or re.search(r'\[\s*STD\s*\]$', assigned_title, re.IGNORECASE):
+                            requested_tag = 'STD'
+
+                        if requested_tag == 'DX':
+                            tags = ['DX', 'STD', 'ST']
+                        elif requested_tag == 'STD':
+                            tags = ['STD', 'ST', 'DX']
+                        else:
+                            tags = ['STD', 'ST', 'DX']
+
                         candidates = []
                         for t in tags:
                             candidates.append(f"{base_name} [{t}]")
