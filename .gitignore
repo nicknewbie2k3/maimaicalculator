@@ -90,3 +90,6 @@ celerybeat-schedule
 .ipynb_checkpoints
 nosetests.xml
 coverage.xml
+
+# Exclude frontend libs
+!/frontend/src/lib/*
