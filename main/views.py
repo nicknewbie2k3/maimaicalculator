@@ -11,6 +11,7 @@ from django.http import HttpResponse, JsonResponse
 from django.db.models import Q
 from django.contrib import messages
 from .models import OldSong, NewSong, MaimaiSong
+from inertia import inertia
 
 def parse_decimal(val):
     try:
@@ -197,6 +198,7 @@ def find_maimai_song_by_title(title):
 
     return None
 
+@inertia('Index')
 def calculator_list(request):
     if request.method == 'POST':
         try:
@@ -325,22 +327,24 @@ def calculator_list(request):
     # Sort the song names
     all_song_names = sorted(all_song_names)
     
-    return render(request, "main/calculator_list.html", {
-        "old_songs": [],
-        "new_songs": [],
-        "merged_grid": [[None] * 5 for _ in range(10)],  # Empty 10x5 grid
-        "total_rating": 0,
-        "old_total_rating": 0,
-        "new_total_rating": 0,
-        "total_average_rating": 0,
-        "all_song_names": all_song_names,
-        "maimai_songs_dict": maimai_songs_dict,
-        "alias_to_title_map": alias_to_title_map,
-    })
+    maimai_songs_data = {
+        title: {
+            'version': song.version or '',
+            'chart_type': song.chart_type or '',
+            'image_url': song.image_url or '',
+        }
+        for title, song in maimai_songs_dict.items()
+    }
+    return {
+        'allSongNames': all_song_names,
+        'maimaiSongsDict': maimai_songs_data,
+        'aliasToTitleMap': alias_to_title_map,
+    }
 
+@inertia('DatabaseUpload')
 def database_upload(request):
-    message = ""
     if request.method == "POST" and request.FILES.get("json_file"):
+        message = ""
         json_file = request.FILES["json_file"]
         try:
             data = json.load(json_file)
@@ -391,7 +395,9 @@ def database_upload(request):
             message = f"Upload successful. {len(uploaded_titles)} songs now in the database."
         except Exception as e:
             message = f"Error processing file: {e}"
-    return render(request, "main/databaseUpload.html", {"message": message})
+        request.session['db_upload_message'] = message
+        return redirect('database_upload')
+    return {'message': request.session.pop('db_upload_message', '')}
 
 def save_b50_data(request):
     """Export B50 data from localStorage as JSON file for download."""
@@ -1000,6 +1006,7 @@ def convert_cache_to_b50_direct(request):
     
     return JsonResponse({'status': 'error', 'message': 'No cache file uploaded or invalid request method.'})
 
+@inertia('ChartDatabase')
 def chart_database(request):
     songs_qs = MaimaiSong.objects.all()
 
@@ -1074,14 +1081,52 @@ def chart_database(request):
         "宴会場"
     ]
 
-    return render(request, "main/chart_database.html", {
-        "songs": songs,
-        "filter_titles": filter_titles,
-        "filter_versions": filter_versions,
-        "filter_artists": filter_artists,
-        "filter_catcodes": filter_catcodes,
-        "alias_to_title_map": alias_to_title_map,
-    })
+    songs_data = [
+        {
+            'id': song.id,
+            'title': song.title,
+            'title_kana': song.title_kana or '',
+            'artist': song.artist or '',
+            'catcode': song.catcode or '',
+            'image_url': song.image_url or '',
+            'release': song.release or '',
+            'lev_bas': str(song.lev_bas) if song.lev_bas else '',
+            'lev_adv': str(song.lev_adv) if song.lev_adv else '',
+            'lev_exp': str(song.lev_exp) if song.lev_exp else '',
+            'lev_mas': str(song.lev_mas) if song.lev_mas else '',
+            'lev_remas': str(song.lev_remas) if song.lev_remas else '',
+            'sort': song.sort or '',
+            'version': song.version or '',
+            'chart_type': song.chart_type or '',
+        }
+        for song in songs
+    ]
+    return {
+        'songs': songs_data,
+        'pagination': {
+            'page': songs.number,
+            'numPages': songs.paginator.num_pages,
+            'hasPrevious': songs.has_previous(),
+            'hasNext': songs.has_next(),
+            'previousPage': songs.previous_page_number if songs.has_previous() else None,
+            'nextPage': songs.next_page_number if songs.has_next() else None,
+            'startIndex': songs.start_index(),
+            'totalCount': songs.paginator.count,
+        },
+        'filterTitles': filter_titles,
+        'filterVersions': list(filter_versions),
+        'filterArtists': list(filter_artists),
+        'filterCatcodes': filter_catcodes,
+        'aliasToTitleMap': alias_to_title_map,
+        'currentFilters': {
+            'title': title,
+            'version': version,
+            'artist': artist,
+            'catcode': catcode,
+            'chartType': chart_type,
+            'difficulty': difficulty,
+        },
+    }
 
 def download_chart_database(request):
     """Export the entire chart database as JSON file for download."""
@@ -1218,93 +1263,79 @@ def get_song_aliases(request, song_id):
     except Exception as e:
         return JsonResponse({'status': 'error', 'message': f'Error getting aliases: {str(e)}'})
 
+@inertia('AliasUpload')
 def alias_upload(request):
     """Handle alias file upload and processing."""
     if request.method == 'POST' and request.FILES.get('alias_file'):
+        flash_msgs = []
         try:
             alias_file = request.FILES['alias_file']
-            
-            # Check file size (5MB limit)
+
             if alias_file.size > 5 * 1024 * 1024:
-                messages.error(request, 'File size too large. Maximum allowed size is 5MB.')
-                return render(request, "main/alias_upload.html")
-            
-            # Check file extension
+                flash_msgs.append({'type': 'danger', 'text': 'File size too large. Maximum allowed size is 5MB.'})
+                request.session['alias_flash'] = flash_msgs
+                return redirect('alias_upload')
+
             if not alias_file.name.endswith('.json'):
-                messages.error(request, 'Invalid file type. Please upload a JSON file.')
-                return render(request, "main/alias_upload.html")
-            
-            # Parse JSON data
+                flash_msgs.append({'type': 'danger', 'text': 'Invalid file type. Please upload a JSON file.'})
+                request.session['alias_flash'] = flash_msgs
+                return redirect('alias_upload')
+
             try:
                 data = json.load(alias_file)
             except json.JSONDecodeError as e:
-                messages.error(request, f'Invalid JSON format: {str(e)}')
-                return render(request, "main/alias_upload.html")
-            
-            # Handle both single song object and array of songs
-            songs_data = []
+                flash_msgs.append({'type': 'danger', 'text': f'Invalid JSON format: {str(e)}'})
+                request.session['alias_flash'] = flash_msgs
+                return redirect('alias_upload')
+
             if isinstance(data, dict):
-                # Single song format
                 songs_data = [data]
             elif isinstance(data, list):
-                # Multiple songs format
                 songs_data = data
             else:
-                messages.error(request, 'JSON must be either a single object or an array of objects with "chart_name" and "chart_alias" fields.')
-                return render(request, "main/alias_upload.html")
-            
-            # Process each song
+                flash_msgs.append({'type': 'danger', 'text': 'JSON must be either a single object or an array of objects with "chart_name" and "chart_alias" fields.'})
+                request.session['alias_flash'] = flash_msgs
+                return redirect('alias_upload')
+
             total_processed = 0
             total_aliases_added = 0
             results = []
-            
+
             for i, song_data in enumerate(songs_data):
                 if not isinstance(song_data, dict):
                     results.append(f'Entry {i+1}: Invalid format - must be an object')
                     continue
-                
+
                 chart_name = song_data.get('chart_name')
                 chart_aliases = song_data.get('chart_alias')
-                
+
                 if not chart_name:
                     results.append(f'Entry {i+1}: Missing "chart_name" field')
                     continue
-                    
                 if not chart_aliases:
                     results.append(f'Entry {i+1}: Missing "chart_alias" field for "{chart_name}"')
                     continue
-                    
                 if not isinstance(chart_aliases, list):
                     results.append(f'Entry {i+1}: "chart_alias" must be an array for "{chart_name}"')
                     continue
-                
-                # Find the song in database with flexible matching
+
                 song = None
-                
-                # First try exact match
                 try:
                     song = MaimaiSong.objects.get(title=chart_name)
                 except MaimaiSong.DoesNotExist:
-                    # Try matching with [DX], [ST], and [STD] tags (explicit variants)
                     possible_matches = MaimaiSong.objects.filter(
-                        Q(title=f"{chart_name} [DX]") | 
+                        Q(title=f"{chart_name} [DX]") |
                         Q(title=f"{chart_name} [ST]") |
                         Q(title=f"{chart_name} [STD]")
                     )
-
                     if possible_matches.exists():
                         if possible_matches.count() == 1:
-                            # Only one match found
                             song = possible_matches.first()
                             results.append(f'Note: Matched "{chart_name}" to "{song.title}"')
                         else:
-                            # Multiple matches - process all
                             multiple_processed = 0
                             for matched_song in possible_matches:
-                                # Get existing aliases
                                 existing_aliases = matched_song.get_aliases_list()
-
-                                # Add new aliases (avoid duplicates)
                                 new_aliases_added = []
                                 for alias in chart_aliases:
                                     if isinstance(alias, str) and alias.strip():
@@ -1312,34 +1343,25 @@ def alias_upload(request):
                                         if clean_alias not in existing_aliases:
                                             existing_aliases.append(clean_alias)
                                             new_aliases_added.append(clean_alias)
-
                                 if new_aliases_added:
-                                    # Update the song with new aliases
                                     matched_song.set_aliases_list(existing_aliases)
                                     matched_song.save()
-
-                                    aliases_text = ', '.join([f'"{alias}"' for alias in new_aliases_added])
+                                    aliases_text = ', '.join([f'"{a}"' for a in new_aliases_added])
                                     results.append(f'✓ "{matched_song.title}": Added {len(new_aliases_added)} aliases ({aliases_text})')
                                     total_aliases_added += len(new_aliases_added)
                                     multiple_processed += 1
                                 else:
                                     results.append(f'○ "{matched_song.title}": No new aliases added (all already exist)')
                                     multiple_processed += 1
-
                             total_processed += multiple_processed
-                            continue  # Skip the single song processing below
-
-                    # Fall back to robust lookup using normalized/assigned title and aliases
+                            continue
                     song = find_maimai_song_by_title(chart_name)
-                
+
                 if not song:
-                    results.append(f'Entry {i+1}: Song "{chart_name}" not found in database (tried exact match and [DX]/[ST] variants)')
+                    results.append(f'Entry {i+1}: Song "{chart_name}" not found in database')
                     continue
-                
-                # Get existing aliases
+
                 existing_aliases = song.get_aliases_list()
-                
-                # Add new aliases (avoid duplicates)
                 new_aliases_added = []
                 for alias in chart_aliases:
                     if isinstance(alias, str) and alias.strip():
@@ -1347,41 +1369,33 @@ def alias_upload(request):
                         if clean_alias not in existing_aliases:
                             existing_aliases.append(clean_alias)
                             new_aliases_added.append(clean_alias)
-                
+
                 if new_aliases_added:
-                    # Update the song with new aliases
                     song.set_aliases_list(existing_aliases)
                     song.save()
-                    
-                    aliases_text = ', '.join([f'"{alias}"' for alias in new_aliases_added])
+                    aliases_text = ', '.join([f'"{a}"' for a in new_aliases_added])
                     results.append(f'✓ "{chart_name}": Added {len(new_aliases_added)} aliases ({aliases_text})')
                     total_aliases_added += len(new_aliases_added)
                 else:
                     results.append(f'○ "{chart_name}": No new aliases added (all already exist)')
-                
                 total_processed += 1
-            
-            # Show summary results
+
             if total_processed > 0:
                 summary = f'Processed {total_processed} songs, added {total_aliases_added} new aliases total.'
-                if results:
-                    detail_message = '\n'.join(results)
-                    messages.success(request, f'{summary}\n\nDetails:\n{detail_message}')
-                else:
-                    messages.success(request, summary)
+                detail = '\n'.join(results)
+                flash_msgs.append({'type': 'success', 'text': f'{summary}\n\nDetails:\n{detail}' if detail else summary})
             else:
-                messages.error(request, 'No songs were processed successfully.')
+                flash_msgs.append({'type': 'danger', 'text': 'No songs were processed successfully.'})
                 if results:
-                    error_details = '\n'.join(results)
-                    messages.error(request, f'Errors encountered:\n{error_details}')
-                
+                    flash_msgs.append({'type': 'danger', 'text': 'Errors encountered:\n' + '\n'.join(results)})
+
         except Exception as e:
-            messages.error(request, f'Error processing file: {str(e)}')
-            
-        return render(request, "main/alias_upload.html")
-    
-    # GET request - just show the page
-    return render(request, "main/alias_upload.html")
+            flash_msgs.append({'type': 'danger', 'text': f'Error processing file: {str(e)}'})
+
+        request.session['alias_flash'] = flash_msgs
+        return redirect('alias_upload')
+
+    return {'messages': request.session.pop('alias_flash', [])}
 
 def convert_cache_to_all_scores(request):
     """Convert cache file to show ALL played scores (not just B50)."""

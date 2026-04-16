@@ -1,0 +1,24 @@
+{% load static django_vite %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MaiMai Calculator</title>
+    <link rel="stylesheet" href="{% static 'main/main.css' %}">
+    {% if debug %}
+    <script type="module">
+      import RefreshRuntime from 'http://localhost:5173/static/dist/@react-refresh'
+      RefreshRuntime.injectIntoGlobalHook(window)
+      window.$RefreshReg$ = () => {}
+      window.$RefreshSig$ = () => () => {}
+      window.__vite_plugin_react_preamble_installed__ = true
+    </script>
+    {% endif %}
+    {% vite_hmr_client %}
+    {% vite_asset 'src/main.tsx' %}
+</head>
+<body>
+    {% block inertia %}{% endblock %}
+</body>
+</html>
