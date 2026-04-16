@@ -231,11 +231,20 @@ export default function Index() {
   const writeFull = (d: B50Data) => { try { localStorage.setItem(FULL_KEY, JSON.stringify(d)); setFullDataState(d) } catch { /* storage quota exceeded */ } }
 
   useEffect(() => {
-    const stored = readB50()
-    setB50State(recategorize(stored, maimaiSongsDict))
-    setFullDataState(readFull())
+    const full = readFull()
+    if (full && ((full.old_songs && full.old_songs.length) || (full.new_songs && full.new_songs.length))) {
+      setFullDataState(full)
+      // Use the table's full-data ordering/content for the grid so they stay in sync
+      const oldArr = (full.old_songs || []).slice().sort((a, b) => b.calculated_rating - a.calculated_rating).slice(0, 35)
+      const newArr = (full.new_songs || []).slice().sort((a, b) => b.calculated_rating - a.calculated_rating).slice(0, 15)
+      setB50State({ old_songs: oldArr, new_songs: newArr })
+    } else {
+      const stored = readB50()
+      setB50State(recategorize(stored, maimaiSongsDict))
+      setFullDataState(null)
+    }
     setUsername(localStorage.getItem(USERNAME_KEY) || '')
-  }, [])
+  }, [maimaiSongsDict])
 
   const updateUsername = (val: string) => {
     setUsername(val)
