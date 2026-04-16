@@ -42,6 +42,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -115,7 +116,17 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = "static/"
+# Use a leading slash for STATIC_URL and configure STATIC_ROOT for collectstatic
+STATIC_URL = "/static/"
+
+# Where `manage.py collectstatic` will collect static files for deployment
+STATIC_ROOT = BASE_DIR / "staticfiles"
+
+# Additional locations the staticfiles app will search (your project `static/` dir)
+STATICFILES_DIRS = [BASE_DIR / "static"]
+
+# Use WhiteNoise to serve static files in production (and locally for testing)
+STATICFILES_STORAGE = "whitenoise.storage.CompressedStaticFilesStorage"
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field

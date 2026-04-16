@@ -47,6 +47,22 @@ class MaimaiSong(models.Model):
     sort = models.CharField(max_length=20, blank=True, null=True)
     version = models.CharField(max_length=100, blank=True, null=True)
     chart_type = models.CharField(max_length=10, blank=True, null=True)  # Added for [STD]/[DX] distinction
+    aliases = models.TextField(blank=True, null=True)  # JSON field to store multiple aliases
 
     def __str__(self):
         return f"{self.title} ({self.version}, {self.chart_type})"
+    
+    def get_aliases_list(self):
+        """Return aliases as a list."""
+        if self.aliases:
+            try:
+                import json
+                return json.loads(self.aliases)
+            except (json.JSONDecodeError, TypeError):
+                return []
+        return []
+    
+    def set_aliases_list(self, aliases_list):
+        """Set aliases from a list."""
+        import json
+        self.aliases = json.dumps(aliases_list) if aliases_list else None

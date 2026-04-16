@@ -172,6 +172,12 @@
       <button type="button" class="btn btn-primary me-2" onclick="document.getElementById('b50FileInput').click();">
         <i class="fas fa-upload me-1"></i>Load B50 Data
       </button>
+      <button type="button" class="btn btn-warning me-2" onclick="document.getElementById('cacheToB50FileInput').click();">
+        <i class="fas fa-exchange-alt me-1"></i>Convert Cache to B50
+      </button>
+      <button type="button" class="btn btn-success me-2" id="downloadB50Btn" onclick="downloadConvertedB50()" style="display: none;" title="Download the converted B50 file">
+        <i class="fas fa-download me-1"></i>Download B50 File
+      </button>
       <button type="button" class="btn btn-info me-2" onclick="printB50()">
         <i class="fas fa-camera me-1"></i>Print B50
       </button>
@@ -179,6 +185,7 @@
         <i class="fas fa-trash me-1"></i>Clear B50 Data
       </button>
       <input type="file" id="b50FileInput" accept=".json" style="display: none;">
+      <input type="file" id="cacheToB50FileInput" accept="*" style="display: none;">
       <div id="loadStatus" class="alert mt-3" style="display: none;"></div>
       
       <!-- Chart Type Legend -->
@@ -196,7 +203,7 @@
         <label for="song_name" class="col-form-label">Song Name:</label>
       </div>
       <div class="col-auto position-relative" style="min-width:250px;">
-        <input type="text" id="song_name" name="song_name" maxlength="100" required autocomplete="off" class="form-control" oninput="showDropdown()">
+        <input type="text" id="song_name" name="song_name" maxlength="100" required autocomplete="off" class="form-control" oninput="showDropdown()" placeholder="Song Name or Alias">
         <div id="songDropdown" class="dropdown-menu" style="display:none; max-height:200px; overflow-y:auto; width:100%;"></div>
       </div>
       <div class="col-auto">
@@ -221,6 +228,13 @@
         <button type="submit" class="btn btn-primary" onclick="return addSongToLocalStorage(event)">Add</button>
       </div>
     </form>
+    
+    <div class="mb-3">
+      <small class="text-muted">
+        <i class="fas fa-info-circle"></i>
+        If you want to add an alias to a song, consider clicking Chart Database and add it! This is exclusively a community feature.
+      </small>
+    </div>
     <script>
       // List of all song names from the database (passed from Django)
       const allSongNames = [
@@ -228,6 +242,64 @@
           "{{ song|escapejs }}"{% if not forloop.last %},{% endif %}
         {% endfor %}
       ];
+
+      // Alias to title mapping
+      const aliasToTitleMap = {
+        {% for alias, title in alias_to_title_map.items %}"{{ alias|escapejs }}": "{{ title|escapejs }}"{% if not forloop.last %},{% endif %}{% endfor %}
+      };
+
+      // Calculate similarity percentage between two strings
+      function calculateSimilarity(str1, str2) {
+        const s1 = str1.toLowerCase();
+        const s2 = str2.toLowerCase();
+        
+        if (s1 === s2) return 100;
+        if (s1.length === 0 || s2.length === 0) return 0;
+        
+        // Calculate character overlap
+        const chars1 = {};
+        const chars2 = {};
+        
+        for (let char of s1) {
+          chars1[char] = (chars1[char] || 0) + 1;
+        }
+        
+        for (let char of s2) {
+          chars2[char] = (chars2[char] || 0) + 1;
+        }
+        
+        let commonChars = 0;
+        for (let char in chars1) {
+          if (chars2[char]) {
+            commonChars += Math.min(chars1[char], chars2[char]);
+          }
+        }
+        
+        // Calculate position bonus (characters in correct positions)
+        let positionBonus = 0;
+        const minLength = Math.min(s1.length, s2.length);
+        for (let i = 0; i < minLength; i++) {
+          if (s1[i] === s2[i]) {
+            positionBonus++;
+          }
+        }
+        
+        // Substring bonus (if one string contains the other)
+        let substringBonus = 0;
+        if (s1.includes(s2) || s2.includes(s1)) {
+          substringBonus = Math.min(s1.length, s2.length) * 0.3;
+        }
+        
+        // Calculate final similarity (weighted average)
+        const totalChars = Math.max(s1.length, s2.length);
+        const charSimilarity = (commonChars / totalChars) * 100;
+        const positionSimilarity = (positionBonus / minLength) * 100;
+        
+        // Weighted combination: character overlap (70%) + position bonus (20%) + substring bonus (10%)
+        const similarity = (charSimilarity * 0.7) + (positionSimilarity * 0.2) + (substringBonus / totalChars * 100 * 0.1);
+        
+        return Math.round(similarity);
+      }
 
       const input = document.getElementById('song_name');
       const dropdown = document.getElementById('songDropdown');
@@ -239,18 +311,103 @@
           dropdown.style.display = 'none';
           return;
         }
-        const matches = allSongNames.filter(name => name.toLowerCase().includes(value));
+
+        let matches = [];
+        
+        // First check exact matches (contains search term)
+        const exactAliasMatches = Object.keys(aliasToTitleMap).filter(alias => 
+          alias.toLowerCase().includes(value)
+        );
+        
+        // Add exact alias matches
+        exactAliasMatches.forEach(alias => {
+          const originalTitle = aliasToTitleMap[alias];
+          if (!matches.find(m => m.value === originalTitle)) {
+            matches.push({
+              display: originalTitle,
+              value: originalTitle,
+              similarity: 100, // Exact matches get 100%
+              type: 'exact'
+            });
+          }
+        });
+        
+        // Add exact title matches
+        const exactTitleMatches = allSongNames.filter(name => 
+          name.toLowerCase().includes(value) && 
+          !matches.find(m => m.value === name)
+        );
+        exactTitleMatches.forEach(name => {
+          matches.push({
+            display: name,
+            value: name,
+            similarity: 100,
+            type: 'exact'
+          });
+        });
+        
+        // If we have few exact matches, add fuzzy matches
+        if (matches.length < 5) {
+          // Calculate similarity for all aliases
+          Object.keys(aliasToTitleMap).forEach(alias => {
+            const originalTitle = aliasToTitleMap[alias];
+            if (!matches.find(m => m.value === originalTitle)) {
+              const similarity = calculateSimilarity(value, alias.toLowerCase());
+              if (similarity >= 30) { // Minimum threshold
+                matches.push({
+                  display: originalTitle,
+                  value: originalTitle,
+                  similarity: similarity,
+                  type: 'fuzzy'
+                });
+              }
+            }
+          });
+          
+          // Calculate similarity for all titles
+          allSongNames.forEach(name => {
+            if (!matches.find(m => m.value === name)) {
+              const similarity = calculateSimilarity(value, name.toLowerCase());
+              if (similarity >= 30) { // Minimum threshold
+                matches.push({
+                  display: name,
+                  value: name,
+                  similarity: similarity,
+                  type: 'fuzzy'
+                });
+              }
+            }
+          });
+        }
+        
+        // Sort by similarity (exact matches first, then by similarity percentage)
+        matches.sort((a, b) => {
+          if (a.type === 'exact' && b.type === 'fuzzy') return -1;
+          if (a.type === 'fuzzy' && b.type === 'exact') return 1;
+          return b.similarity - a.similarity;
+        });
+        
+        // Limit to top 10 results for performance
+        matches = matches.slice(0, 10);
+        
         if (matches.length === 0) {
           dropdown.style.display = 'none';
           return;
         }
-        matches.forEach(name => {
+        
+        matches.forEach(match => {
           const option = document.createElement('button');
           option.type = 'button';
           option.className = 'dropdown-item';
-          option.textContent = name;
+          // Add similarity indicator for fuzzy matches
+          if (match.type === 'fuzzy' && match.similarity < 100) {
+            option.innerHTML = `${match.display} <small class="text-muted">(${match.similarity}% match)</small>`;
+          } else {
+            option.textContent = match.display;
+          }
+          
           option.onclick = function() {
-            input.value = name;
+            input.value = match.value;
             dropdown.style.display = 'none';
           };
           dropdown.appendChild(option);
@@ -270,6 +427,7 @@
     <script>
       // localStorage B50 Management
       const B50_STORAGE_KEY = 'maimai_b50_data';
+      const FULL_STORAGE_KEY = 'maimai_full_scores_data';
 
       // Song database for reference
       const maimaiSongsDict = {
@@ -290,6 +448,19 @@
 
       function saveB50Data(data) {
         localStorage.setItem(B50_STORAGE_KEY, JSON.stringify(data));
+      }
+
+      function getFullData() {
+        const data = localStorage.getItem(FULL_STORAGE_KEY);
+        return data ? JSON.parse(data) : null;
+      }
+
+      function saveFullData(data) {
+        try {
+          localStorage.setItem(FULL_STORAGE_KEY, JSON.stringify(data));
+        } catch (e) {
+          console.warn('Failed to save full data to localStorage', e);
+        }
       }
 
       // Add song to localStorage
@@ -359,7 +530,26 @@
             }
             
             saveB50Data(b50Data);
-            updateDisplay();
+            // Also update full dataset (if present) so tables reflect all chart ratings including manual adds
+            try {
+              const fullData = getFullData() || { old_songs: [], new_songs: [] };
+              const fullTarget = isNewSong ? fullData.new_songs : fullData.old_songs;
+              const fullExistingIndex = fullTarget.findIndex(song => song.song_name === songData.song_name && song.difficulty_type === songData.difficulty_type);
+              if (fullExistingIndex !== -1) {
+                if (songData.achievement > fullTarget[fullExistingIndex].achievement) {
+                  fullTarget[fullExistingIndex] = songData;
+                }
+              } else {
+                fullTarget.push(songData);
+              }
+              // Keep full dataset sorted for convenience (do not truncate)
+              fullData.old_songs.sort((a, b) => b.calculated_rating - a.calculated_rating);
+              fullData.new_songs.sort((a, b) => b.calculated_rating - a.calculated_rating);
+              saveFullData(fullData);
+            } catch (e) {
+              console.warn('Could not update full dataset in localStorage', e);
+            }
+            scheduleUpdateDisplay();
             
             // Reset form
             event.target.form.reset();
@@ -445,10 +635,18 @@
       function updateDisplay() {
         const rawB50Data = getB50Data();
         
+        // Quick check: if no data, skip processing
+        if (!rawB50Data.old_songs || !rawB50Data.new_songs || 
+            (rawB50Data.old_songs.length === 0 && rawB50Data.new_songs.length === 0)) {
+          // Clear displays and exit early
+          clearAllDisplays();
+          return;
+        }
+        
         // Apply proper old/new chart categorization
         const b50Data = recategorizeB50Data(rawB50Data);
         
-        // Save the recategorized data back to localStorage
+        // Save the recategorized data back to localStorage (only if changed)
         saveB50Data(b50Data);
         
         // Calculate ratings
@@ -458,8 +656,13 @@
         const totalCount = b50Data.old_songs.length + b50Data.new_songs.length;
         const avgRating = totalCount > 0 ? Math.round(totalRating / totalCount) : 0;
         
-        // Update rating displays
-        const totalRatingHeader = Array.from(document.querySelectorAll('h2')).find(h => h.textContent.includes('Total Rating'));
+        // Update rating displays with AstroDX format
+        const titleHeader = document.querySelector('h1');
+        if (titleHeader) {
+          titleHeader.textContent = 'AstroDX Manual Rating Converter';
+        }
+        
+        const totalRatingHeader = Array.from(document.querySelectorAll('h2')).find(h => h.textContent.includes('Total Rating') || h.textContent.includes('B50 Rating'));
         if (totalRatingHeader) {
           totalRatingHeader.textContent = `Total Rating: ${totalRating}`;
         }
@@ -467,83 +670,111 @@
         const ratingSubheader = document.querySelector('h4');
         if (ratingSubheader) {
           ratingSubheader.innerHTML = `
-            Old Chart Total Rating: ${oldTotalRating} &nbsp;|&nbsp;
-            New Chart Total Rating: ${newTotalRating} &nbsp;|&nbsp;
-            Total Average Rating: ${avgRating}
+            Old Chart Total Rating: ${oldTotalRating} | New Chart Total Rating: ${newTotalRating} | Total Average Rating: ${avgRating}
           `;
         }
         
         // Update both grid and table displays
+        const fullData = getFullData();
         updateGridDisplay(b50Data);
-        updateTableViews(b50Data);
+        updateTableViews(b50Data, fullData);
+      }
+
+      // Coalesced scheduler for updateDisplay to avoid repeated synchronous layout work
+      let _updateDisplayScheduled = false;
+      function scheduleUpdateDisplay() {
+        if (_updateDisplayScheduled) return;
+        _updateDisplayScheduled = true;
+        requestAnimationFrame(() => {
+          _updateDisplayScheduled = false;
+          updateDisplay();
+        });
       }
 
       function updateGridDisplay(b50Data) {
-        // Sort old and new songs separately by rating
-        const sortedOldSongs = [...b50Data.old_songs]
-          .sort((a, b) => b.calculated_rating - a.calculated_rating)
-          .slice(0, 35); // Max 35 old songs
-        const sortedNewSongs = [...b50Data.new_songs]
-          .sort((a, b) => b.calculated_rating - a.calculated_rating)
-          .slice(0, 15); // Max 15 new songs
+        // Use the EXACT data provided (already sorted and selected by backend)
+        // Do NOT re-sort or re-select here to maintain consistency with table
+        const oldSongs = [...b50Data.old_songs]; // Use exact order from backend
+        const newSongs = [...b50Data.new_songs]; // Use exact order from backend
         
         // Pad arrays to full capacity
-        while (sortedOldSongs.length < 35) {
-          sortedOldSongs.push(null);
+        while (oldSongs.length < 35) {
+          oldSongs.push(null);
         }
-        while (sortedNewSongs.length < 15) {
-          sortedNewSongs.push(null);
+        while (newSongs.length < 15) {
+          newSongs.push(null);
         }
         
-        // Update grid cells
+        // Batch DOM writes: build HTML for all rows then set once
         const gridContainer = document.getElementById('b50GridContainer');
         const table = gridContainer.querySelector('table tbody');
-        
-        // Clear existing content
-        table.innerHTML = '';
-        
-        // Create 10 rows of 5 columns
+
+        // Build HTML string for the full grid to avoid repeated reflows
+        let rowsHTML = '';
         for (let row = 0; row < 10; row++) {
-          const tr = document.createElement('tr');
+          rowsHTML += '<tr>';
           for (let col = 0; col < 5; col++) {
-            const td = document.createElement('td');
             let song = null;
-            
-            // Determine which song to display based on row position
+
             if (row < 7) {
-              // Rows 0-6: Old charts (35 positions)
               const oldSongIndex = row * 5 + col;
-              song = sortedOldSongs[oldSongIndex];
+              song = oldSongs[oldSongIndex];
             } else {
-              // Rows 7-9: New charts (15 positions) 
               const newSongIndex = (row - 7) * 5 + col;
-              song = sortedNewSongs[newSongIndex];
+              song = newSongs[newSongIndex];
             }
-            
-            td.className = 'song-grid-cell' + (row === 7 ? ' border-divider-row' : '');
-            
+
+            const baseClass = 'song-grid-cell' + (row === 7 ? ' border-divider-row' : '');
+
             if (song) {
               const diffClass = getDifficultyClass(song.difficulty_type);
               const chartTypeClass = isNewChart(song) ? 'new-chart' : 'old-chart';
-              td.className += ` ${diffClass} ${chartTypeClass}`;
-              td.innerHTML = createSongCellHTML(song);
+              rowsHTML += '<td class="' + baseClass + ' ' + diffClass + ' ' + chartTypeClass + '">' + createSongCellHTML(song) + '</td>';
             } else {
-              td.innerHTML = '<div class="song-grid-cell-inner"></div>';
+              rowsHTML += '<td class="' + baseClass + '"><div class="song-grid-cell-inner"></div></td>';
             }
-            
-            tr.appendChild(td);
           }
-          table.appendChild(tr);
+          rowsHTML += '</tr>';
         }
+
+        // Replace tbody content in one operation
+        table.innerHTML = rowsHTML;
       }
 
       // Function to update table views for old and new songs
-      function updateTableViews(b50Data) {
-        // Update Old Songs table
-        updateSongTable('old', b50Data.old_songs);
-        
-        // Update New Songs table  
-        updateSongTable('new', b50Data.new_songs);
+      function updateTableViews(b50Data, fullData) {
+        // If we have a full dataset (from conversion/import), prefer that for tables
+        const oldSongsForTable = (fullData && fullData.old_songs && fullData.old_songs.length > 0) ? fullData.old_songs : b50Data.old_songs;
+        const newSongsForTable = (fullData && fullData.new_songs && fullData.new_songs.length > 0) ? fullData.new_songs : b50Data.new_songs;
+
+        // Update Old/New Songs tables
+        updateSongTable('old', oldSongsForTable);
+        updateSongTable('new', newSongsForTable);
+
+        // Update headers to reflect table counts (use fullData counts when present)
+        const oldTableHeader = document.getElementById('oldSongsTableHeader');
+        const newTableHeader = document.getElementById('newSongsTableHeader');
+        if (oldTableHeader) {
+          oldTableHeader.textContent = `Old Songs (${oldSongsForTable.length})`;
+        }
+        if (newTableHeader) {
+          newTableHeader.textContent = `New Songs (${newSongsForTable.length})`;
+        }
+
+        // Calculate and update rating totals based on the B50 grid selection (b50Data)
+        const oldTotalRating = b50Data.old_songs.reduce((sum, song) => sum + (song.calculated_rating || 0), 0);
+        const newTotalRating = b50Data.new_songs.reduce((sum, song) => sum + (song.calculated_rating || 0), 0);
+        const totalRating = oldTotalRating + newTotalRating;
+        const avgRating = b50Data.old_songs.length + b50Data.new_songs.length > 0 ? 
+                         Math.round(totalRating / (b50Data.old_songs.length + b50Data.new_songs.length)) : 0;
+
+        // Update the header display for B50 mode (grid totals remain based on the capped B50 selection)
+        document.querySelector('h2').textContent = `Total Rating: ${totalRating}`;
+        document.querySelector('h4').innerHTML = `
+          Old Chart Total Rating: ${oldTotalRating} &nbsp;|&nbsp;
+          New Chart Total Rating: ${newTotalRating} &nbsp;|&nbsp;
+          Total Average Rating: ${avgRating}
+        `;
       }
 
       // Helper function to update a specific song table
@@ -555,30 +786,27 @@
         
         if (!tbody) return;
         
-        tbody.innerHTML = '';
-        
         if (songs.length === 0) {
-          const row = document.createElement('tr');
-          row.innerHTML = `<td colspan="7" class="text-center">No ${tableType} songs found.</td>`;
-          tbody.appendChild(row);
-        } else {
-          songs.forEach((song, index) => {
-            const row = document.createElement('tr');
-            const chartTypeClass = isNewChart(song) ? 'new-chart-row' : 'old-chart-row';
-            row.className = chartTypeClass;
-            
-            row.innerHTML = `
-              <td>${index + 1}</td>
-              <td>${song.song_name}</td>
-              <td>${song.difficulty_type}</td>
-              <td>${song.rank}</td>
-              <td>${parseFloat(song.achievement).toFixed(4)}%</td>
-              <td>${parseFloat(song.chart_difficulty).toFixed(1)}</td>
-              <td>${song.calculated_rating}</td>
-            `;
-            tbody.appendChild(row);
-          });
+          tbody.innerHTML = '<tr><td colspan="7" class="text-center">No ' + tableType + ' songs found.</td></tr>';
+          return;
         }
+
+        // Build rows HTML once and set innerHTML in one operation
+        let rowsHTML = '';
+        songs.forEach((song, index) => {
+          const chartTypeClass = isNewChart(song) ? 'new-chart-row' : 'old-chart-row';
+          rowsHTML += '<tr class="' + chartTypeClass + '">';
+          rowsHTML += '<td>' + (index + 1) + '</td>';
+          rowsHTML += '<td>' + song.song_name + '</td>';
+          rowsHTML += '<td>' + song.difficulty_type + '</td>';
+          rowsHTML += '<td>' + song.rank + '</td>';
+          rowsHTML += '<td>' + (parseFloat(song.achievement).toFixed(4)) + '%</td>';
+          rowsHTML += '<td>' + (parseFloat(song.chart_difficulty).toFixed(1)) + '</td>';
+          rowsHTML += '<td>' + song.calculated_rating + '</td>';
+          rowsHTML += '</tr>';
+        });
+
+        tbody.innerHTML = rowsHTML;
       }
 
       function getDifficultyClass(difficulty) {
@@ -602,7 +830,7 @@
             <span class="song-title-oneline ${chartTypeClass}">${song.song_name}</span>
             ${songInfo.image_url ? `
               <a href="${songInfo.image_url}" target="_blank" class="song-cell-image">
-                <img src="${songInfo.image_url}" alt="Image">
+                <img src="${songInfo.image_url}" alt="Image" loading="lazy" decoding="async">
               </a>
             ` : ''}
             <div class="song-cell-bottom-left">
@@ -615,17 +843,25 @@
         `;
       }
 
-      // Initialize display on page load
-      document.addEventListener('DOMContentLoaded', function() {
-        // Validate and fix existing localStorage data
-        const existingData = getB50Data();
-        if (existingData.old_songs.length > 0 || existingData.new_songs.length > 0) {
-          // Re-categorize existing data to fix any categorization issues
-          const fixedData = recategorizeB50Data(existingData);
-          saveB50Data(fixedData);
+      // Helper function to clear all displays when no data
+      function clearAllDisplays() {
+        const gridContainer = document.getElementById('b50GridContainer');
+        const gridTable = gridContainer.querySelector('table tbody');
+        if (gridTable) {
+          gridTable.innerHTML = '<tr><td colspan="5" class="text-center p-4">No B50 data. Add songs or upload a cache file.</td></tr>';
         }
         
-        updateDisplay();
+        // Clear table headers
+        const h2 = document.querySelector('h2');
+        const h4 = document.querySelector('h4');
+        if (h2) h2.textContent = 'Total Rating: 0';
+        if (h4) h4.innerHTML = 'Old Chart Total Rating: 0 | New Chart Total Rating: 0 | Total Average Rating: 0';
+      }
+
+      // Initialize display on page load
+      document.addEventListener('DOMContentLoaded', function() {
+        // Just update display - it will handle recategorization internally
+        scheduleUpdateDisplay();
       });
     </script>
 
@@ -655,11 +891,13 @@
             // Re-categorize imported data based on version information
             const originalOldCount = (data.data.old_songs || []).length;
             const originalNewCount = (data.data.new_songs || []).length;
+            // Save the full imported dataset for table display
+            saveFullData(data.data);
             const recategorizedData = recategorizeB50Data(data.data);
             
             // Save to localStorage
             saveB50Data(recategorizedData);
-            updateDisplay();
+            scheduleUpdateDisplay();
             
             const finalOldCount = recategorizedData.old_songs.length;
             const finalNewCount = recategorizedData.new_songs.length;
@@ -692,6 +930,91 @@
         this.value = '';
       });
 
+      // Handle combined cache to B50 conversion
+      document.getElementById('cacheToB50FileInput').addEventListener('change', function() {
+        const file = this.files[0];
+        if (!file) return;
+
+        const formData = new FormData();
+        formData.append('cache_file', file);
+        formData.append('csrfmiddlewaretoken', document.querySelector('[name=csrfmiddlewaretoken]').value);
+
+        const statusDiv = document.getElementById('loadStatus');
+        statusDiv.style.display = 'block';
+        statusDiv.className = 'alert alert-info';
+        statusDiv.textContent = 'Converting cache file and loading scores...';
+
+        // Hide B50 download button initially
+        document.getElementById('downloadB50Btn').style.display = 'none';
+
+        fetch('{% url "convert_cache_to_all_scores" %}', {
+          method: 'POST',
+          body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+          if (data.status === 'success') {
+            statusDiv.className = 'alert alert-success';
+            statusDiv.textContent = data.message;
+            
+            // Store the B35+15 data in localStorage and update grid display
+            if (data.b35_15_data) {
+              // Save the grid-limited B50 selection
+              saveB50Data(data.b35_15_data);
+              // Save the full dataset so tables can display all charts
+              if (data.data) saveFullData(data.data);
+              // Update UI (grid + tables will be refreshed by scheduleUpdateDisplay())
+              scheduleUpdateDisplay();
+            }
+            
+            setTimeout(() => {
+              statusDiv.style.display = 'none';
+            }, 5000);
+          } else {
+            statusDiv.className = 'alert alert-danger';
+            statusDiv.textContent = 'Error: ' + data.message;
+            setTimeout(() => {
+              statusDiv.style.display = 'none';
+            }, 7000);
+          }
+        })
+        .catch(error => {
+          statusDiv.className = 'alert alert-danger';
+          statusDiv.textContent = 'Network error: ' + error.message;
+          setTimeout(() => {
+            statusDiv.style.display = 'none';
+          }, 7000);
+        });
+
+        // Reset file input
+        this.value = '';
+      });
+
+      // Function to download converted B50 file
+      function downloadConvertedB50() {
+        const statusDiv = document.getElementById('loadStatus');
+        statusDiv.style.display = 'block';
+        statusDiv.className = 'alert alert-info';
+        statusDiv.textContent = 'Preparing B50 file for download...';
+
+        // Create a temporary link to trigger the download
+        const downloadLink = document.createElement('a');
+        downloadLink.href = '{% url "download_converted_b50" %}';
+        downloadLink.download = '';
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        document.body.removeChild(downloadLink);
+        
+        // Show success message
+        setTimeout(() => {
+          statusDiv.className = 'alert alert-success';
+          statusDiv.textContent = 'B50 file download started!';
+          setTimeout(() => {
+            statusDiv.style.display = 'none';
+          }, 2000);
+        }, 500);
+      }
+
       // Function to confirm and clear B50 data
       function confirmClearB50() {
         // const confirmation = confirm(
@@ -716,7 +1039,8 @@
 
         // Clear localStorage
         saveB50Data({ old_songs: [], new_songs: [] });
-        updateDisplay();
+        try { localStorage.removeItem(FULL_STORAGE_KEY); } catch (e) {}
+        scheduleUpdateDisplay();
 
         statusDiv.className = 'alert alert-success';
         statusDiv.textContent = 'B50 data cleared successfully!';
@@ -915,7 +1239,7 @@
                       {% with song_obj=maimai_songs_dict|get_item:song.song_name %}
                         {% if song_obj and song_obj.image_url %}
                           <a href="{{ song_obj.image_url }}" target="_blank" class="song-cell-image">
-                            <img src="{{ song_obj.image_url }}" alt="Image">
+                            <img src="{{ song_obj.image_url }}" alt="Image" loading="lazy" decoding="async">
                           </a>
                         {% endif %}
                       {% endwith %}
@@ -941,7 +1265,7 @@
       </table>
     </div>
 
-      <h2>Old Songs (Table View)</h2>
+      <h2 id="oldSongsTableHeader">Old Songs (Table View)</h2>
     <div class="table-responsive mb-4">
       <table class="table table-striped table-bordered align-middle">
         <thead class="table-dark">
@@ -975,7 +1299,7 @@
       </table>
     </div>
 
-    <h2>New Songs</h2>
+    <h2 id="newSongsTableHeader">New Songs</h2>
     <div class="table-responsive">
       <table class="table table-striped table-bordered align-middle">
         <thead class="table-dark">

@@ -1,0 +1,185 @@
+{% extends 'main/base.html' %}
+{% block title %}Alias Upload{% endblock %}
+{% block content %}
+  <!-- Bootstrap CSS CDN -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <!-- Font Awesome for icons -->
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+
+  <div class="container my-4">
+    <div class="row justify-content-center">
+      <div class="col-md-10 col-lg-8">
+        <div class="card shadow">
+          <div class="card-header bg-primary text-white">
+            <h3 class="card-title mb-0">
+              <i class="fas fa-file-upload me-2"></i>Add Aliases via File
+            </h3>
+          </div>
+          <div class="card-body">
+            
+            <div class="alert alert-info">
+              <h5><i class="fas fa-info-circle me-2"></i>File Format Information</h5>
+              <p class="mb-0">
+                To bulk upload aliases, please use a JSON file with the following format:
+              </p>
+            </div>
+
+            <div class="bg-light p-4 rounded">
+              <h6 class="text-primary mb-3"><i class="fas fa-code me-2"></i>JSON Format Options:</h6>
+              
+              <div class="mb-4">
+                <h6 class="text-success"><i class="fas fa-music me-2"></i>Single Song Format:</h6>
+                <pre class="bg-dark text-light p-3 rounded"><code>{
+  "chart_name": "Base Song Title (without [DX]/[STD])",
+  "chart_alias": ["alias1", "alias2", "alias3"]
+}</code></pre>
+              </div>
+
+              <div class="mb-3">
+                <h6 class="text-success"><i class="fas fa-list me-2"></i>Multiple Songs Format:</h6>
+                <pre class="bg-dark text-light p-3 rounded"><code>[
+  {
+    "chart_name": "First Song Title",
+    "chart_alias": ["alias1", "alias2"]
+  },
+  {
+    "chart_name": "Second Song Title", 
+    "chart_alias": ["alias3", "alias4"]
+  }
+]</code></pre>
+              </div>
+            </div>
+
+            <div class="mt-4">
+              <h6 class="text-success mb-3"><i class="fas fa-check-circle me-2"></i>Examples:</h6>
+              
+              <div class="mb-3">
+                <strong>Single Song:</strong>
+                <pre class="bg-dark text-light p-3 rounded"><code>{
+  "chart_name": "熱異常",
+  "chart_alias": ["heat abnormal", "thermal anomaly"]
+}</code></pre>
+              </div>
+
+              <div>
+                <strong>Multiple Songs:</strong>
+                <pre class="bg-dark text-light p-3 rounded"><code>[
+  {
+    "chart_name": "熱異常",
+    "chart_alias": ["heat abnormal"]
+  },
+  {
+    "chart_name": "熱異常指數", 
+    "chart_alias": ["heat abnormal index"]
+  }
+]</code></pre>
+              </div>
+            </div>
+
+            <div class="alert alert-warning mt-4">
+              <h6><i class="fas fa-exclamation-triangle me-2"></i>Important Notes:</h6>
+              <ul class="mb-0">
+                <li><strong>chart_name</strong> can be the base song title (system will auto-match [DX]/[STD] variants)</li>
+                <li><strong>chart_alias</strong> should be an array of strings (even if just one alias)</li>
+                <li>You can upload <strong>single song</strong> or <strong>multiple songs</strong> in one file</li>
+                <li>If both [DX] and [STD] versions exist, aliases will be added to both automatically</li>
+                <li>Aliases will be added to existing aliases (not replace them)</li>
+                <li>Duplicate aliases will be ignored automatically</li>
+                <li>Invalid entries will be skipped with detailed error messages</li>
+              </ul>
+            </div>
+
+            <div class="alert alert-success mt-4">
+              <h6><i class="fas fa-lightbulb me-2"></i>Chart Name Matching:</h6>
+              <p class="mb-2">
+                <strong>Smart Matching:</strong> You can use base song names without chart type tags!
+              </p>
+              <ul class="mb-0">
+                <li><code>"熱異常"</code> → automatically finds <code>"熱異常 [DX]"</code> and/or <code>"熱異常 [STD]"</code></li>
+                <li><code>"ウミユリ海底譚"</code> → automatically finds chart versions in database</li>
+                <li>If both [DX] and [STD] exist, aliases are added to both versions</li>
+              </ul>
+            </div>
+
+            <div class="alert alert-success mt-4">
+              <h6><i class="fas fa-lightbulb me-2"></i>Pro Tips:</h6>
+              <ul class="mb-0">
+                <li><strong>Base Names Work:</strong> Use song names without [DX]/[STD] tags for easier uploading</li>
+                <li><strong>Download Reference:</strong> Check the Chart Database download to see exact song titles if needed</li>
+                <li><strong>Batch Processing:</strong> Upload multiple songs at once for efficiency</li>
+                <li><strong>Auto-Detection:</strong> System automatically finds all chart variants</li>
+              </ul>
+            </div>
+
+            <div class="mt-4 text-center">
+              <a href="{% url 'chart_database' %}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left me-2"></i>Back to Chart Database
+              </a>
+            </div>
+
+            <hr class="my-4">
+
+            <!-- File Upload Form -->
+            <div class="bg-light p-4 rounded">
+              <h5 class="text-primary mb-3">
+                <i class="fas fa-upload me-2"></i>Upload Alias File
+              </h5>
+              
+              {% if messages %}
+                {% for message in messages %}
+                  <div class="alert alert-{% if message.tags == 'error' %}danger{% else %}{{ message.tags }}{% endif %} alert-dismissible fade show">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                  </div>
+                {% endfor %}
+              {% endif %}
+
+              <form method="post" enctype="multipart/form-data" class="mb-3">
+                {% csrf_token %}
+                <div class="mb-3">
+                  <label for="alias_file" class="form-label">
+                    <i class="fas fa-file-code me-2"></i>Select JSON File:
+                  </label>
+                  <input type="file" 
+                         class="form-control" 
+                         id="alias_file" 
+                         name="alias_file" 
+                         accept=".json"
+                         required>
+                  <div class="form-text">
+                    Only JSON files are accepted (maximum 5MB). Can contain single or multiple songs.
+                  </div>
+                </div>
+                
+                <div class="d-grid gap-2">
+                  <button type="submit" class="btn btn-success btn-lg">
+                    <i class="fas fa-cloud-upload-alt me-2"></i>Upload Aliases
+                  </button>
+                </div>
+              </form>
+              
+              <div class="text-center">
+                <small class="text-muted">
+                  <i class="fas fa-shield-alt me-1"></i>
+                  File will be processed securely and deleted after processing
+                </small>
+              </div>
+            </div>
+
+            <hr class="my-4">
+
+            <div class="text-muted small">
+              <h6><i class="fas fa-users me-2"></i>Community Feature</h6>
+              <p class="mb-0">
+                This alias system is a community-driven feature. Your contributions help make song searching 
+                easier for everyone. Thank you for helping improve the database!
+              </p>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}

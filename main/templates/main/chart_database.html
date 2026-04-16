@@ -1,16 +1,20 @@
 {% extends 'main/base.html' %}
 {% block title %}Chart Database{% endblock %}
 {% block content %}
-  <!-- Bootstrap CSS CDN (if not already in base.html) -->
+  <!-- Bootstrap CSS and JS CDN -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <!-- Font Awesome for icons -->
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 
   <div class="container-fluid my-4" style="max-width:150vw;">
     <h1 class="text-center mb-4">Maimai Chart Database</h1>
 
     <!-- Filter Form -->
     <form method="get" class="row g-2 mb-4" autocomplete="off">
+      {% csrf_token %}
       <div class="col-md-2 position-relative">
-        <input type="text" class="form-control" id="filter_title" name="title" placeholder="Song Name" value="{{ request.GET.title|default_if_none:'' }}" autocomplete="off" oninput="showDropdown('title')">
+        <input type="text" class="form-control" id="filter_title" name="title" placeholder="Song Name or Alias" value="{{ request.GET.title|default_if_none:'' }}" autocomplete="off" oninput="showDropdown('title')">
         <div id="dropdown-title" class="dropdown-menu" style="display:none; max-height:200px; overflow-y:auto; width:100%;"></div>
       </div>
       <div class="col-md-2 position-relative">
@@ -53,6 +57,12 @@
       <div class="col-md-12 mt-2">
         <button type="submit" class="btn btn-primary">Filter</button>
         <a href="{% url 'chart_database' %}" class="btn btn-secondary">Reset</a>
+        <a href="{% url 'download_chart_database' %}" class="btn btn-success ms-3">
+          <i class="fas fa-download me-1"></i>Download Full Database (JSON)
+        </a>
+        <a href="{% url 'alias_upload' %}" class="btn btn-info ms-3">
+          <i class="fas fa-file-upload me-1"></i>Add Alias via File
+        </a>
       </div>
     </form>
 
@@ -70,6 +80,64 @@
         ]
       };
 
+      // Alias to title mapping
+      const aliasToTitleMap = {
+        {% for alias, title in alias_to_title_map.items %}"{{ alias|escapejs }}": "{{ title|escapejs }}"{% if not forloop.last %},{% endif %}{% endfor %}
+      };
+
+      // Calculate similarity percentage between two strings
+      function calculateSimilarity(str1, str2) {
+        const s1 = str1.toLowerCase();
+        const s2 = str2.toLowerCase();
+        
+        if (s1 === s2) return 100;
+        if (s1.length === 0 || s2.length === 0) return 0;
+        
+        // Calculate character overlap
+        const chars1 = {};
+        const chars2 = {};
+        
+        for (let char of s1) {
+          chars1[char] = (chars1[char] || 0) + 1;
+        }
+        
+        for (let char of s2) {
+          chars2[char] = (chars2[char] || 0) + 1;
+        }
+        
+        let commonChars = 0;
+        for (let char in chars1) {
+          if (chars2[char]) {
+            commonChars += Math.min(chars1[char], chars2[char]);
+          }
+        }
+        
+        // Calculate position bonus (characters in correct positions)
+        let positionBonus = 0;
+        const minLength = Math.min(s1.length, s2.length);
+        for (let i = 0; i < minLength; i++) {
+          if (s1[i] === s2[i]) {
+            positionBonus++;
+          }
+        }
+        
+        // Substring bonus (if one string contains the other)
+        let substringBonus = 0;
+        if (s1.includes(s2) || s2.includes(s1)) {
+          substringBonus = Math.min(s1.length, s2.length) * 0.3;
+        }
+        
+        // Calculate final similarity (weighted average)
+        const totalChars = Math.max(s1.length, s2.length);
+        const charSimilarity = (commonChars / totalChars) * 100;
+        const positionSimilarity = (positionBonus / minLength) * 100;
+        
+        // Weighted combination: character overlap (70%) + position bonus (20%) + substring bonus (10%)
+        const similarity = (charSimilarity * 0.7) + (positionSimilarity * 0.2) + (substringBonus / totalChars * 100 * 0.1);
+        
+        return Math.round(similarity);
+      }
+
       function showDropdown(field) {
         const input = document.getElementById('filter_' + field);
         const dropdown = document.getElementById('dropdown-' + field);
@@ -79,18 +147,142 @@
           dropdown.style.display = 'none';
           return;
         }
-        const matches = filterData[field].filter(option => option.toLowerCase().includes(value));
+
+        let matches = [];
+        
+        if (field === 'title') {
+          // First check exact matches (contains search term)
+          const exactAliasMatches = Object.keys(aliasToTitleMap).filter(alias => 
+            alias.toLowerCase().includes(value)
+          );
+          
+          // Add exact alias matches
+          exactAliasMatches.forEach(alias => {
+            const originalTitle = aliasToTitleMap[alias];
+            if (!matches.find(m => m.value === originalTitle)) {
+              matches.push({
+                display: originalTitle,
+                value: originalTitle,
+                similarity: 100, // Exact matches get 100%
+                type: 'exact'
+              });
+            }
+          });
+          
+          // Add exact title matches
+          const exactTitleMatches = filterData[field].filter(option => 
+            option.toLowerCase().includes(value) && 
+            !matches.find(m => m.value === option)
+          );
+          exactTitleMatches.forEach(title => {
+            matches.push({
+              display: title,
+              value: title,
+              similarity: 100,
+              type: 'exact'
+            });
+          });
+          
+          // If we have few exact matches, add fuzzy matches
+          if (matches.length < 5) {
+            // Calculate similarity for all aliases
+            Object.keys(aliasToTitleMap).forEach(alias => {
+              const originalTitle = aliasToTitleMap[alias];
+              if (!matches.find(m => m.value === originalTitle)) {
+                const similarity = calculateSimilarity(value, alias.toLowerCase());
+                if (similarity >= 30) { // Minimum threshold
+                  matches.push({
+                    display: originalTitle,
+                    value: originalTitle,
+                    similarity: similarity,
+                    type: 'fuzzy'
+                  });
+                }
+              }
+            });
+            
+            // Calculate similarity for all titles
+            filterData[field].forEach(title => {
+              if (!matches.find(m => m.value === title)) {
+                const similarity = calculateSimilarity(value, title.toLowerCase());
+                if (similarity >= 30) { // Minimum threshold
+                  matches.push({
+                    display: title,
+                    value: title,
+                    similarity: similarity,
+                    type: 'fuzzy'
+                  });
+                }
+              }
+            });
+          }
+          
+          // Sort by similarity (exact matches first, then by similarity percentage)
+          matches.sort((a, b) => {
+            if (a.type === 'exact' && b.type === 'fuzzy') return -1;
+            if (a.type === 'fuzzy' && b.type === 'exact') return 1;
+            return b.similarity - a.similarity;
+          });
+          
+          // Limit to top 10 results for performance
+          matches = matches.slice(0, 10);
+          
+        } else {
+          // For other fields, use original logic with fuzzy matching
+          const exactMatches = filterData[field].filter(option => option.toLowerCase().includes(value));
+          exactMatches.forEach(option => {
+            matches.push({
+              display: option,
+              value: option,
+              similarity: 100,
+              type: 'exact'
+            });
+          });
+          
+          if (matches.length < 5) {
+            filterData[field].forEach(option => {
+              if (!matches.find(m => m.value === option)) {
+                const similarity = calculateSimilarity(value, option.toLowerCase());
+                if (similarity >= 30) {
+                  matches.push({
+                    display: option,
+                    value: option,
+                    similarity: similarity,
+                    type: 'fuzzy'
+                  });
+                }
+              }
+            });
+            
+            matches.sort((a, b) => {
+              if (a.type === 'exact' && b.type === 'fuzzy') return -1;
+              if (a.type === 'fuzzy' && b.type === 'exact') return 1;
+              return b.similarity - a.similarity;
+            });
+            
+            matches = matches.slice(0, 10);
+          }
+        }
+        
         if (matches.length === 0) {
           dropdown.style.display = 'none';
           return;
         }
-        matches.forEach(optionText => {
+        
+        matches.forEach(match => {
           const option = document.createElement('button');
           option.type = 'button';
           option.className = 'dropdown-item';
-          option.textContent = optionText;
+          
+          // Add similarity indicator for fuzzy matches
+          if (match.type === 'fuzzy' && match.similarity < 100) {
+            option.innerHTML = `${match.display} <small class="text-muted">(${match.similarity}% match)</small>`;
+          } else {
+            option.textContent = match.display;
+          }
+          
           option.onclick = function() {
-            input.value = optionText;
+            input.value = match.value;
             dropdown.style.display = 'none';
           };
           dropdown.appendChild(option);
@@ -111,8 +303,16 @@
     </script>
 
     <!-- Show number of results -->
-    <div class="mb-2">
-      <strong>{{ songs.paginator.count }}</strong> result{{ songs.paginator.count|pluralize }} found.
+    <div class="mb-2 d-flex justify-content-between align-items-center">
+      <div>
+        <strong>{{ songs.paginator.count }}</strong> result{{ songs.paginator.count|pluralize }} found.
+      </div>
+      <div>
+        <small class="text-muted">
+          <i class="fas fa-info-circle"></i>
+          Search by song name or aliases • Download includes all songs with aliases (not just filtered results)
+        </small>
+      </div>
     </div>
 
     <div class="table-responsive" style="overflow-x:auto;">
@@ -134,6 +334,7 @@
             <th>Sort</th>
             <th>Version</th>
             <th>Chart Type</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -147,7 +348,7 @@
             <td>
               {% if song.image_url %}
                 <a href="{{ song.image_url }}" target="_blank">
-                  <img src="{{ song.image_url }}" alt="Image" style="height:40px; max-width:60px; border-radius:4px;">
+                  <img src="{{ song.image_url }}" alt="Image" loading="lazy" decoding="async" style="height:40px; max-width:60px; border-radius:4px;">
                 </a>
               {% else %}
                 -
@@ -162,10 +363,15 @@
             <td>{{ song.sort }}</td>
             <td>{{ song.version }}</td>
             <td>{{ song.chart_type }}</td>
+            <td>
+              <button type="button" class="btn btn-sm btn-primary" onclick="openAliasModal({{ song.id }}, '{{ song.title|escapejs }}')">
+                <i class="fas fa-tag"></i> Aliases
+              </button>
+            </td>
           </tr>
           {% empty %}
           <tr>
-            <td colspan="15" class="text-center">No songs found.</td>
+            <td colspan="16" class="text-center">No songs found.</td>
           </tr>
           {% endfor %}
         </tbody>
@@ -203,5 +409,209 @@
         {% endif %}
       </ul>
     </nav>
+
+    <!-- Alias Management Modal -->
+    <div class="modal fade" id="aliasModal" tabindex="-1" aria-labelledby="aliasModalLabel" aria-hidden="true">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="aliasModalLabel">Manage Aliases</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-3">
+              <strong>Song:</strong> <span id="modalSongTitle"></span>
+            </div>
+            
+            <div class="mb-3">
+              <label for="newAlias" class="form-label">Add New Alias:</label>
+              <div class="input-group">
+                <input type="text" class="form-control" id="newAlias" placeholder="Enter alias name">
+                <button class="btn btn-success" type="button" onclick="addAlias()">Add</button>
+              </div>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label">Current Aliases:</label>
+              <div id="aliasesList" class="border p-2 rounded" style="min-height: 100px; max-height: 200px; overflow-y: auto;">
+                <em class="text-muted">No aliases added yet.</em>
+              </div>
+            </div>
+
+            <div id="aliasStatus" class="alert" style="display: none;"></div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      let currentSongId = null;
+      
+      function openAliasModal(songId, songTitle) {
+        currentSongId = songId;
+        document.getElementById('modalSongTitle').textContent = songTitle;
+        document.getElementById('newAlias').value = '';
+        loadAliases(songId);
+        
+        const modal = new bootstrap.Modal(document.getElementById('aliasModal'));
+        modal.show();
+      }
+
+      function loadAliases(songId) {
+        // Get current aliases from server
+        fetch(`{% url 'get_song_aliases' 0 %}`.replace('0', songId))
+          .then(response => response.json())
+          .then(data => {
+            if (data.status === 'success') {
+              displayAliases(data.aliases);
+            } else {
+              console.error('Error loading aliases:', data.message);
+              displayAliases([]);
+            }
+          })
+          .catch(error => {
+            console.error('Error loading aliases:', error);
+            displayAliases([]);
+          });
+      }
+
+      function displayAliases(aliases) {
+        const aliasesList = document.getElementById('aliasesList');
+        
+        if (!aliases || aliases.length === 0) {
+          aliasesList.innerHTML = '<em class="text-muted">No aliases added yet.</em>';
+          return;
+        }
+
+        let html = '';
+        aliases.forEach(alias => {
+          html += `
+            <div class="d-flex justify-content-between align-items-center mb-2 p-2 bg-light rounded">
+              <span>${alias}</span>
+              <button class="btn btn-sm btn-danger" onclick="removeAlias('${alias}')">
+                <i class="fas fa-times"></i>
+              </button>
+            </div>
+          `;
+        });
+        aliasesList.innerHTML = html;
+      }
+
+      function addAlias() {
+        const aliasInput = document.getElementById('newAlias');
+        const alias = aliasInput.value.trim();
+        
+        if (!alias) {
+          showAliasStatus('Please enter an alias name', 'warning');
+          return;
+        }
+
+        if (!currentSongId) {
+          showAliasStatus('No song selected', 'danger');
+          return;
+        }
+
+        showAliasStatus('Adding alias...', 'info');
+
+        fetch('{% url "add_alias" %}', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value || getCookie('csrftoken')
+          },
+          body: JSON.stringify({
+            song_id: currentSongId,
+            alias: alias
+          })
+        })
+        .then(response => response.json())
+        .then(data => {
+          if (data.status === 'success') {
+            aliasInput.value = '';
+            displayAliases(data.aliases);
+            showAliasStatus(data.message, 'success');
+          } else {
+            showAliasStatus(data.message, 'danger');
+          }
+        })
+        .catch(error => {
+          console.error('Error:', error);
+          showAliasStatus('Network error occurred', 'danger');
+        });
+      }
+
+      function removeAlias(alias) {
+        if (!currentSongId) {
+          showAliasStatus('No song selected', 'danger');
+          return;
+        }
+
+        showAliasStatus('Removing alias...', 'info');
+
+        fetch('{% url "remove_alias" %}', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value || getCookie('csrftoken')
+          },
+          body: JSON.stringify({
+            song_id: currentSongId,
+            alias: alias
+          })
+        })
+        .then(response => response.json())
+        .then(data => {
+          if (data.status === 'success') {
+            displayAliases(data.aliases);
+            showAliasStatus(data.message, 'success');
+          } else {
+            showAliasStatus(data.message, 'danger');
+          }
+        })
+        .catch(error => {
+          console.error('Error:', error);
+          showAliasStatus('Network error occurred', 'danger');
+        });
+      }
+
+      function showAliasStatus(message, type) {
+        const statusDiv = document.getElementById('aliasStatus');
+        statusDiv.className = `alert alert-${type}`;
+        statusDiv.textContent = message;
+        statusDiv.style.display = 'block';
+
+        // Auto-hide success messages
+        if (type === 'success') {
+          setTimeout(() => {
+            statusDiv.style.display = 'none';
+          }, 3000);
+        }
+      }
+
+      function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+          const cookies = document.cookie.split(';');
+          for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+              cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+              break;
+            }
+          }
+        }
+        return cookieValue;
+      }
+
+      // Allow Enter key to add alias
+      document.getElementById('newAlias').addEventListener('keypress', function(event) {
+        if (event.key === 'Enter') {
+          addAlias();
+        }
+      });
+    </script>
   </div>
 {% endblock %}
