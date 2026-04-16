@@ -269,139 +269,145 @@ export default function ChartDatabase() {
 
   return (
     <MainLayout>
-      <div className="w-full px-4 py-6">
-        <h1 className="text-2xl font-bold text-center mb-6">Maimai Chart Database</h1>
+      <div className="w-full px-4 py-8 max-w-5xl mx-auto">
+        <div className="mb-8 text-center">
+          <h1 className="text-3xl font-bold text-foreground mb-1">Chart Database</h1>
+          <p className="text-sm text-muted-foreground">Browse and filter all maimai songs</p>
+        </div>
 
-        <form className="flex flex-wrap gap-2 mb-4" autoComplete="off" onSubmit={handleFilter}>
-          <div className="w-44">
-            <Autocomplete id="filter_title" value={filters.title} onChange={setF('title')} options={filterTitles} aliasMap={aliasToTitleMap} placeholder="Song Name or Alias" />
-          </div>
-          <div className="w-36">
-            <Autocomplete id="filter_version" value={filters.version} onChange={setF('version')} options={filterVersions} placeholder="Version" />
-          </div>
-          <div className="w-36">
-            <Autocomplete id="filter_artist" value={filters.artist} onChange={setF('artist')} options={filterArtists} placeholder="Artist" />
-          </div>
-          <Select value={filters.catcode} onValueChange={setF('catcode')}>
-            <SelectTrigger className="w-36">
-              <SelectValue placeholder="Catcode" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                <SelectItem value="">All Catcodes</SelectItem>
-                {filterCatcodes.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-          <Select value={filters.chartType} onValueChange={setF('chartType')}>
-            <SelectTrigger className="w-32">
-              <SelectValue placeholder="Chart Type" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                <SelectItem value="">All Types</SelectItem>
-                <SelectItem value="STD">STD</SelectItem>
-                <SelectItem value="DX">DX</SelectItem>
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-          <Select value={filters.difficulty} onValueChange={setF('difficulty')}>
-            <SelectTrigger className="w-36">
-              <SelectValue placeholder="Difficulty" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                <SelectItem value="">All Difficulties</SelectItem>
-                {['Basic', 'Advanced', 'Expert', 'Master', 'Re:Master'].map(d => (
-                  <SelectItem key={d} value={d}>{d}</SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-          <div className="flex gap-2 flex-wrap items-center">
+        <div className="rounded-xl border bg-card shadow-sm p-4 mb-6">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-3">Filters</p>
+          <form className="flex flex-wrap gap-2 items-center" autoComplete="off" onSubmit={handleFilter}>
+            <div className="w-44">
+              <Autocomplete id="filter_title" value={filters.title} onChange={setF('title')} options={filterTitles} aliasMap={aliasToTitleMap} placeholder="Song Name or Alias" />
+            </div>
+            <div className="w-36">
+              <Autocomplete id="filter_version" value={filters.version} onChange={setF('version')} options={filterVersions} placeholder="Version" />
+            </div>
+            <div className="w-36">
+              <Autocomplete id="filter_artist" value={filters.artist} onChange={setF('artist')} options={filterArtists} placeholder="Artist" />
+            </div>
+            <Select value={filters.catcode} onValueChange={setF('catcode')}>
+              <SelectTrigger className="w-36">
+                <SelectValue placeholder="Catcode" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value="">All Catcodes</SelectItem>
+                  {filterCatcodes.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <Select value={filters.chartType} onValueChange={setF('chartType')}>
+              <SelectTrigger className="w-32">
+                <SelectValue placeholder="Chart Type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value="">All Types</SelectItem>
+                  <SelectItem value="STD">STD</SelectItem>
+                  <SelectItem value="DX">DX</SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <Select value={filters.difficulty} onValueChange={setF('difficulty')}>
+              <SelectTrigger className="w-36">
+                <SelectValue placeholder="Difficulty" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value="">All Difficulties</SelectItem>
+                  {['Basic', 'Advanced', 'Expert', 'Master', 'Re:Master'].map(d => (
+                    <SelectItem key={d} value={d}>{d}</SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <div className="h-5 w-px bg-border mx-0.5" />
             <Button type="submit">Filter</Button>
             <Link href="/chart-database/">
               <Button type="button" variant="secondary">Reset</Button>
             </Link>
             <a href="/chart-database/download/">
-              <Button type="button" variant="outline">
+              <Button type="button" variant="outline" size="sm">
                 <Download data-icon="inline-start" />
-                Download Full Database (JSON)
+                Download JSON
               </Button>
             </a>
             <Link href="/chart-database/alias-upload/">
-              <Button type="button" variant="outline">
+              <Button type="button" variant="outline" size="sm">
                 <FileUp data-icon="inline-start" />
-                Add Alias via File
+                Alias Upload
               </Button>
             </Link>
-          </div>
-        </form>
+          </form>
+        </div>
 
         <div className="flex items-center justify-between mb-3 text-sm">
-          <div><strong>{pagination.totalCount}</strong> result{pagination.totalCount !== 1 ? 's' : ''} found.</div>
-          <span className="text-muted-foreground flex items-center gap-1">
+          <div><strong>{pagination.totalCount}</strong> result{pagination.totalCount !== 1 ? 's' : ''} found</div>
+          <span className="text-muted-foreground flex items-center gap-1 text-xs">
             <Info className="size-3.5" /> Search by song name or aliases
           </span>
         </div>
 
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>#</TableHead>
-              <TableHead>Title</TableHead>
-              <TableHead>Title Kana</TableHead>
-              <TableHead>Artist</TableHead>
-              <TableHead>Catcode</TableHead>
-              <TableHead>Image</TableHead>
-              <TableHead>Release</TableHead>
-              <TableHead>Basic</TableHead>
-              <TableHead>Adv</TableHead>
-              <TableHead>Exp</TableHead>
-              <TableHead>Mas</TableHead>
-              <TableHead>Re:Mas</TableHead>
-              <TableHead>Sort</TableHead>
-              <TableHead>Version</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {songs.length === 0
-              ? <TableRow><TableCell colSpan={16} className="text-center text-muted-foreground">No songs found.</TableCell></TableRow>
-              : songs.map((s, i) => (
-                <TableRow key={s.id}>
-                  <TableCell>{pagination.startIndex + i}</TableCell>
-                  <TableCell>{s.title}</TableCell>
-                  <TableCell>{s.title_kana}</TableCell>
-                  <TableCell>{s.artist}</TableCell>
-                  <TableCell>{s.catcode}</TableCell>
-                  <TableCell>
-                    {s.image_url
-                      ? <a href={s.image_url} target="_blank" rel="noreferrer">
-                          <img src={s.image_url} alt="" loading="lazy" className="h-10 max-w-[60px] rounded" />
-                        </a>
-                      : '-'}
-                  </TableCell>
-                  <TableCell>{s.release}</TableCell>
-                  <TableCell>{s.lev_bas}</TableCell>
-                  <TableCell>{s.lev_adv}</TableCell>
-                  <TableCell>{s.lev_exp}</TableCell>
-                  <TableCell>{s.lev_mas}</TableCell>
-                  <TableCell>{s.lev_remas}</TableCell>
-                  <TableCell>{s.sort}</TableCell>
-                  <TableCell>{s.version}</TableCell>
-                  <TableCell>{s.chart_type}</TableCell>
-                  <TableCell>
-                    <Button size="sm" variant="outline" onClick={() => openModal(s)}>
-                      <Tag data-icon="inline-start" />
-                      Aliases
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-          </TableBody>
-        </Table>
+        <div className="rounded-xl border bg-card shadow-sm overflow-hidden mb-6">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-10">#</TableHead>
+                <TableHead>Title</TableHead>
+                <TableHead>Artist</TableHead>
+                <TableHead>Image</TableHead>
+                <TableHead>Version</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Basic</TableHead>
+                <TableHead>Adv</TableHead>
+                <TableHead>Exp</TableHead>
+                <TableHead>Mas</TableHead>
+                <TableHead>Re:Mas</TableHead>
+                <TableHead>Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {songs.length === 0
+                ? <TableRow><TableCell colSpan={12} className="text-center text-muted-foreground py-12">No songs found.</TableCell></TableRow>
+                : songs.map((s, i) => (
+                  <TableRow key={s.id}>
+                    <TableCell className="text-muted-foreground text-xs">{pagination.startIndex + i}</TableCell>
+                    <TableCell className="font-medium max-w-[180px]">
+                      <div className="truncate">{s.title}</div>
+                      {s.catcode && <div className="text-xs text-muted-foreground">{s.catcode}</div>}
+                    </TableCell>
+                    <TableCell className="text-sm max-w-[140px]"><div className="truncate">{s.artist}</div></TableCell>
+                    <TableCell>
+                      {s.image_url
+                        ? <a href={s.image_url} target="_blank" rel="noreferrer">
+                            <img src={s.image_url} alt="" loading="lazy" className="h-10 w-10 rounded object-cover" />
+                          </a>
+                        : <div className="h-10 w-10 rounded bg-muted flex items-center justify-center text-muted-foreground text-xs">—</div>}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground max-w-[120px]"><div className="truncate">{s.version}</div></TableCell>
+                    <TableCell>
+                      <span className={`inline-block rounded px-1.5 py-0.5 text-xs font-semibold ${s.chart_type === 'DX' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'}`}>
+                        {s.chart_type}
+                      </span>
+                    </TableCell>
+                    <TableCell>{s.lev_bas ? <span className="inline-block rounded px-1.5 py-0.5 text-xs font-semibold bg-green-100 text-green-700">{s.lev_bas}</span> : <span className="text-muted-foreground text-xs">—</span>}</TableCell>
+                    <TableCell>{s.lev_adv ? <span className="inline-block rounded px-1.5 py-0.5 text-xs font-semibold bg-orange-100 text-orange-700">{s.lev_adv}</span> : <span className="text-muted-foreground text-xs">—</span>}</TableCell>
+                    <TableCell>{s.lev_exp ? <span className="inline-block rounded px-1.5 py-0.5 text-xs font-semibold bg-red-100 text-red-700">{s.lev_exp}</span> : <span className="text-muted-foreground text-xs">—</span>}</TableCell>
+                    <TableCell>{s.lev_mas ? <span className="inline-block rounded px-1.5 py-0.5 text-xs font-semibold bg-purple-100 text-purple-700">{s.lev_mas}</span> : <span className="text-muted-foreground text-xs">—</span>}</TableCell>
+                    <TableCell>{s.lev_remas ? <span className="inline-block rounded px-1.5 py-0.5 text-xs font-semibold bg-fuchsia-100 text-fuchsia-700">{s.lev_remas}</span> : <span className="text-muted-foreground text-xs">—</span>}</TableCell>
+                    <TableCell>
+                      <Button size="sm" variant="outline" onClick={() => openModal(s)}>
+                        <Tag data-icon="inline-start" />
+                        Aliases
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+            </TableBody>
+          </Table>
+        </div>
 
         <div className="flex items-center justify-center gap-1 mt-4">
           {pagination.hasPrevious

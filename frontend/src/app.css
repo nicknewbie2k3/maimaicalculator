@@ -136,69 +136,149 @@
 .diff-master   { background-color: #9e009e !important; }
 .diff-remas    { background-color: #610061 !important; }
 
-.song-grid-cell {
-  min-height: 120px;
-  border: 5px solid #000 !important;
-  padding: 0.5rem;
-  vertical-align: top;
-  text-align: left;
-  font-size: 0.95rem;
-  transition: background 0.2s;
-  max-width: 200px;
-  word-break: break-word;
-  position: relative;
+.b50-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  padding: 14px;
+  max-width: 1100px;
+  margin: 0 auto;
 }
-.song-grid-cell-inner { position: relative; min-height: 120px; height: 120px; width: 100%; }
 
-.song-title-oneline {
-  font-weight: bold;
+.song-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.15);
+  transition: transform 0.15s, box-shadow 0.15s;
+  aspect-ratio: 1 / 1;
+}
+.song-card:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.2); }
+.song-card-empty {
+  background: rgba(255,255,255,0.03);
+  border: 1px dashed rgba(255,255,255,0.08);
+  box-shadow: none;
+}
+
+.song-card-art {
+  position: relative;
+  flex: 1 1 auto;
+  background-size: cover;
+  background-position: center;
+  background-color: rgba(0,0,0,0.25);
+}
+.song-card-art::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(180deg, rgba(0,0,0,0.25) 0%, rgba(0,0,0,0) 40%);
+  pointer-events: none;
+}
+
+.song-card-rating {
   position: absolute;
-  top: 0.5rem; left: 0.5rem; right: 0.5rem;
-  z-index: 3;
+  right: 6px; bottom: 6px;
+  font-weight: 900;
+  font-size: 0.95rem;
+  color: #111;
+  background: linear-gradient(135deg, #fff 0%, #e5e7eb 100%);
+  padding: 2px 8px;
+  border-radius: 6px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.45);
+  letter-spacing: 0.3px;
+  z-index: 2;
+}
+
+.song-tag {
+  position: absolute;
+  top: 6px; left: 6px;
+  font-size: 0.6rem;
+  font-weight: 900;
+  padding: 1px 6px;
+  border-radius: 4px;
+  letter-spacing: 1px;
+  color: #fff;
+  text-shadow: 0 1px 1px rgba(0,0,0,0.6);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+  z-index: 2;
+}
+.song-tag-std { background: linear-gradient(135deg, #1e40af, #3b82f6); }
+.song-tag-dx  { background: linear-gradient(135deg, #b45309, #f59e0b); }
+
+.song-card-info {
+  position: relative;
+  padding: 5px 7px 6px;
+  background: rgba(0,0,0,0.42);
+  backdrop-filter: blur(2px);
+  color: #fff;
+  border-top: 1px solid rgba(255,255,255,0.1);
+}
+.song-card-title {
+  font-weight: 800;
+  font-size: 0.72rem;
+  line-height: 1.15;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  padding-left: 6px; padding-right: 6px;
-  max-width: 180px;
-  color: #ffffff;
-  font-size: 1em;
-  pointer-events: none;
-  text-shadow: 1px 1px 2px #000, 0 0 1px #000;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+  margin-bottom: 2px;
 }
-.song-title-std { color: #a6d7ff !important; text-shadow: 1px 1px 2px #000, 0 0 1px #000; }
-.song-title-dx  { color: #f8ecb0 !important; text-shadow: 1px 1px 2px #000, 0 0 1px #000; }
-
-.song-cell-image { position: absolute; top: 0.5rem; right: 0.5rem; z-index: 2; }
-.song-cell-image img { height: 105px; max-width: 130px; border-radius: 6px; }
-
-.song-cell-bottom-left {
-  position: absolute; left: 0.5rem; bottom: 0.5rem;
-  font-size: 0.93em; z-index: 2; text-align: left; line-height: 1.1;
+.song-card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  font-size: 0.7rem;
+  line-height: 1;
 }
-.song-rank-bold {
-  font-weight: bold; font-size: 2em; color: #fff;
-  text-shadow: 1px 1px 4px #000, 0 0 2px #000;
-  letter-spacing: 1px; padding: 1px 8px 1px 2px;
-  border-radius: 6px; display: inline-block; margin-bottom: 2px;
+.song-card-rank {
+  font-weight: 900;
+  font-size: 0.95rem;
+  color: #fde68a;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+  letter-spacing: 0.5px;
 }
-.song-achievement { color: #fff; text-shadow: 1px 1px 4px #000, 0 0 2px #000; }
-.song-chart-diff-bold {
-  font-weight: bold; color: #fff;
-  text-shadow: 1px 1px 4px #000, 0 0 2px #000;
-  background: rgba(0,0,0,0.18); border-radius: 4px;
-  padding: 0 4px; display: inline-block;
+.song-card-ach {
+  font-weight: 600;
+  color: #f3f4f6;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.8);
 }
-.song-cell-bottom-right {
-  position: absolute; right: 0.5rem; bottom: 0.5rem;
-  font-size: 1.2em; font-weight: bold; z-index: 4;
-  color: #222; background: rgba(255,255,255,0.7);
-  padding: 2px 8px; border-radius: 8px; pointer-events: none;
+.song-card-diff {
+  font-weight: 700;
+  color: #fff;
+  background: rgba(0,0,0,0.45);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 0.65rem;
 }
 
-.wide-grid-container { overflow-x: auto; width: 100vw; max-width: 100%; }
-.wide-grid-table { min-width: 1800px; width: auto; }
-.song-grid-cell.border-divider-row { border-top: 12px solid #000 !important; }
-.old-chart     { border-left: 4px solid #007bff !important; }
-.new-chart     { border-left: 4px solid #28a745 !important; }
 .old-chart-row { background-color: rgba(0,123,255,0.05) !important; }
 .new-chart-row { background-color: rgba(40,167,69,0.05) !important; }
+
+.b50-stage {
+  background:
+    radial-gradient(900px 300px at 10% -10%, rgba(236,72,153,0.18), transparent 60%),
+    radial-gradient(700px 300px at 100% 110%, rgba(99,102,241,0.22), transparent 60%),
+    linear-gradient(180deg, #0f0b1f 0%, #0b1020 100%);
+  color: #fff;
+}
+.b50-section-banner {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 16px; margin: 0;
+  font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase;
+  font-size: 0.72rem;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+.b50-banner-old {
+  background: linear-gradient(90deg, rgba(30,58,138,0.6) 0%, rgba(59,130,246,0.2) 100%);
+  color: #dbeafe;
+  border-left: 4px solid #3b82f6;
+}
+.b50-banner-new {
+  background: linear-gradient(90deg, rgba(20,83,45,0.6) 0%, rgba(34,197,94,0.2) 100%);
+  color: #dcfce7;
+  border-left: 4px solid #22c55e;
+}
+.b50-banner-stat { font-size: 1.1rem; font-weight: 900; letter-spacing: 0.5px; color: #fff; }

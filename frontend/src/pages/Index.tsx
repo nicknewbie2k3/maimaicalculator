@@ -33,6 +33,7 @@ import {
 
 const B50_KEY = 'maimai_b50_data'
 const FULL_KEY = 'maimai_full_scores_data'
+const USERNAME_KEY = 'maimai_username'
 
 interface Song {
   song_name: string
@@ -128,31 +129,28 @@ function recategorize(data: B50Data, dict: SongsDict): B50Data {
 interface SongCellProps {
   song: Song | null
   songDict: SongsDict
-  divider?: boolean
 }
 
-function SongCell({ song, songDict, divider }: SongCellProps) {
-  if (!song) return <td className={`song-grid-cell${divider ? ' border-divider-row' : ''}`}><div className="song-grid-cell-inner" /></td>
+function SongCell({ song, songDict }: SongCellProps) {
+  if (!song) return <div className="song-card song-card-empty" />
   const info: SongInfo = songDict[song.song_name] ?? {}
-  const titleClass = info.chart_type === 'STD' ? 'song-title-std' : info.chart_type === 'DX' ? 'song-title-dx' : ''
-  const chartClass = isNewChart(song, songDict) ? 'new-chart' : 'old-chart'
+  const chartTag = info.chart_type === 'STD' ? 'STD' : info.chart_type === 'DX' ? 'DX' : ''
+  const chartTagClass = info.chart_type === 'STD' ? 'song-tag-std' : info.chart_type === 'DX' ? 'song-tag-dx' : ''
   return (
-    <td className={`song-grid-cell ${diffClass(song.difficulty_type)} ${chartClass}${divider ? ' border-divider-row' : ''}`}>
-      <div className="song-grid-cell-inner">
-        <span className={`song-title-oneline ${titleClass}`}>{song.song_name}</span>
-        {info.image_url && (
-          <a href={info.image_url} target="_blank" rel="noreferrer" className="song-cell-image">
-            <img src={info.image_url} alt="" loading="lazy" decoding="async" />
-          </a>
-        )}
-        <div className="song-cell-bottom-left">
-          <span className="song-rank-bold">{song.rank}</span><br />
-          <span className="song-achievement">{parseFloat(String(song.achievement)).toFixed(4)}%</span><br />
-          <span className="song-chart-diff-bold">{parseFloat(String(song.chart_difficulty)).toFixed(1)}</span>
-        </div>
-        <div className="song-cell-bottom-right">{song.calculated_rating}</div>
+    <div className={`song-card ${diffClass(song.difficulty_type)}`}>
+      <div className="song-card-art" style={info.image_url ? { backgroundImage: `url(${info.image_url})` } : undefined}>
+        {chartTag && <span className={`song-tag ${chartTagClass}`}>{chartTag}</span>}
+        <span className="song-card-rating">{song.calculated_rating}</span>
       </div>
-    </td>
+      <div className="song-card-info">
+        <div className="song-card-title" title={song.song_name}>{song.song_name}</div>
+        <div className="song-card-meta">
+          <span className="song-card-rank">{song.rank}</span>
+          <span className="song-card-ach">{parseFloat(String(song.achievement)).toFixed(4)}%</span>
+          <span className="song-card-diff">{parseFloat(String(song.chart_difficulty)).toFixed(1)}</span>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -162,43 +160,36 @@ interface SongTableProps {
   idPrefix: string
 }
 
-function SongTable({ label, songs, idPrefix }: SongTableProps) {
+function SongTable({ songs, idPrefix }: SongTableProps) {
   return (
-    <>
-      <h2 className="text-xl font-semibold mt-8 mb-3" id={`${idPrefix}Header`}>
-        {label} ({songs.length})
-      </h2>
-      <div className="mb-6">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>#</TableHead>
-              <TableHead>Song Name</TableHead>
-              <TableHead>Difficulty</TableHead>
-              <TableHead>Rank</TableHead>
-              <TableHead>Achievement</TableHead>
-              <TableHead>Chart Difficulty</TableHead>
-              <TableHead>Calculated Rating</TableHead>
+    <Table id={`${idPrefix}Header`}>
+      <TableHeader>
+        <TableRow>
+          <TableHead>#</TableHead>
+          <TableHead>Song Name</TableHead>
+          <TableHead>Difficulty</TableHead>
+          <TableHead>Rank</TableHead>
+          <TableHead>Achievement</TableHead>
+          <TableHead>Chart Difficulty</TableHead>
+          <TableHead>Calculated Rating</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {songs.length === 0
+          ? <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">No songs added yet.</TableCell></TableRow>
+          : songs.map((s, i) => (
+            <TableRow key={i} className={isNewChart(s, {}) ? 'new-chart-row' : 'old-chart-row'}>
+              <TableCell className="text-muted-foreground text-xs">{i + 1}</TableCell>
+              <TableCell className="font-medium">{s.song_name}</TableCell>
+              <TableCell>{s.difficulty_type}</TableCell>
+              <TableCell>{s.rank}</TableCell>
+              <TableCell>{parseFloat(String(s.achievement)).toFixed(4)}%</TableCell>
+              <TableCell>{parseFloat(String(s.chart_difficulty)).toFixed(1)}</TableCell>
+              <TableCell className="font-semibold text-primary">{s.calculated_rating}</TableCell>
             </TableRow>
-          </TableHeader>
-          <TableBody>
-            {songs.length === 0
-              ? <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">No songs found.</TableCell></TableRow>
-              : songs.map((s, i) => (
-                <TableRow key={i} className={isNewChart(s, {}) ? 'new-chart-row' : 'old-chart-row'}>
-                  <TableCell>{i + 1}</TableCell>
-                  <TableCell>{s.song_name}</TableCell>
-                  <TableCell>{s.difficulty_type}</TableCell>
-                  <TableCell>{s.rank}</TableCell>
-                  <TableCell>{parseFloat(String(s.achievement)).toFixed(4)}%</TableCell>
-                  <TableCell>{parseFloat(String(s.chart_difficulty)).toFixed(1)}</TableCell>
-                  <TableCell>{s.calculated_rating}</TableCell>
-                </TableRow>
-              ))}
-          </TableBody>
-        </Table>
-      </div>
-    </>
+          ))}
+      </TableBody>
+    </Table>
   )
 }
 
@@ -218,6 +209,7 @@ export default function Index() {
   const [difficulty, setDifficulty] = useState('Basic')
   const [achievement, setAchievement] = useState('')
   const [dropdown, setDropdown] = useState<DropdownItem[]>([])
+  const [username, setUsername] = useState('')
 
   const b50FileRef = useRef<HTMLInputElement>(null)
   const cacheFileRef = useRef<HTMLInputElement>(null)
@@ -242,7 +234,13 @@ export default function Index() {
     const stored = readB50()
     setB50State(recategorize(stored, maimaiSongsDict))
     setFullDataState(readFull())
+    setUsername(localStorage.getItem(USERNAME_KEY) || '')
   }, [])
+
+  const updateUsername = (val: string) => {
+    setUsername(val)
+    localStorage.setItem(USERNAME_KEY, val)
+  }
 
   function buildDropdown(val: string) {
     if (!val) { setDropdown([]); return }
@@ -361,12 +359,34 @@ export default function Index() {
   async function printB50() {
     if (!gridRef.current) return
     showStatus('Generating image...', 'info', 0)
+    const el = gridRef.current
+    const prevOverflow = el.style.overflow
+    const prevWidth = el.style.width
+    el.style.overflow = 'visible'
+    el.style.width = 'max-content'
+    const w = el.scrollWidth
+    const h = el.scrollHeight
+    const MAX = 32000
+    const scale = Math.min(2, MAX / Math.max(w, h))
     try {
-      const canvas = await html2canvas(gridRef.current, { backgroundColor: '#fff', scale: 2, useCORS: true })
+      const canvas = await html2canvas(el, {
+        backgroundColor: null,
+        scale,
+        useCORS: true,
+        width: w,
+        height: h,
+        windowWidth: w,
+        windowHeight: h,
+      })
       const a = document.createElement('a'); a.download = 'maimai_b50_grid.png'; a.href = canvas.toDataURL('image/png')
       a.click()
       showStatus('Image generated!', 'success')
-    } catch (err) { showStatus('Error: ' + (err as Error).message, 'danger') }
+    } catch (err) {
+      showStatus('Error: ' + (err as Error).message, 'danger')
+    } finally {
+      el.style.overflow = prevOverflow
+      el.style.width = prevWidth
+    }
   }
 
   const display = b50
@@ -384,143 +404,213 @@ export default function Index() {
 
   return (
     <MainLayout>
-      <div className="w-full px-4 py-6">
-        <h1 className="text-2xl font-bold text-center mb-2">AstroDX Manual Rating Converter</h1>
-        <h2 className="text-xl font-semibold text-center mb-2">Total Rating: {totalRating}</h2>
-        <p className="text-center text-sm text-muted-foreground mb-6">
-          Old Chart Total Rating: {oldRating} &nbsp;|&nbsp;
-          New Chart Total Rating: {newRating} &nbsp;|&nbsp;
-          Total Average Rating: {avgRating}
-        </p>
+      <div className="w-full px-4 py-8 max-w-5xl mx-auto">
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold text-foreground mb-1">AstroDX Rating Calculator</h1>
+          <p className="text-sm text-muted-foreground">Track your maimai B50 best scores</p>
+        </div>
 
-        <div className="flex flex-wrap justify-center gap-2 mb-4">
-          <Button onClick={saveToFile}>
-            <Download data-icon="inline-start" />
-            Save B50 Data
-          </Button>
-          <Button variant="outline" onClick={() => b50FileRef.current?.click()}>
-            <Upload data-icon="inline-start" />
-            Load B50 Data
-          </Button>
-          <Button variant="outline" onClick={() => cacheFileRef.current?.click()}>
-            <ArrowLeftRight data-icon="inline-start" />
-            Convert Cache to B50
-          </Button>
-          <Button variant="secondary" onClick={printB50}>
-            <Camera data-icon="inline-start" />
-            Print B50
-          </Button>
-          <Button variant="destructive" onClick={clearData}>
-            <Trash2 data-icon="inline-start" />
-            Clear B50 Data
-          </Button>
+        <div className="rounded-xl border bg-card shadow-sm px-4 py-3 mb-6 flex flex-wrap gap-3 items-center">
+          <div className="flex items-center gap-2">
+            <Label htmlFor="username-input" className="text-xs text-muted-foreground">Player</Label>
+            <Input
+              id="username-input"
+              type="text"
+              value={username}
+              onChange={e => updateUsername(e.target.value)}
+              placeholder="Your name"
+              className="h-8 w-40"
+              maxLength={32}
+            />
+          </div>
+          <div className="h-5 w-px bg-border" />
+          <div className="flex flex-wrap gap-2 items-center">
+            <Button onClick={saveToFile} size="sm">
+              <Download data-icon="inline-start" />
+              Save B50
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => b50FileRef.current?.click()}>
+              <Upload data-icon="inline-start" />
+              Load B50
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => cacheFileRef.current?.click()}>
+              <ArrowLeftRight data-icon="inline-start" />
+              Convert Cache
+            </Button>
+            <div className="h-5 w-px bg-border mx-1" />
+            <Button variant="secondary" size="sm" onClick={printB50}>
+              <Camera data-icon="inline-start" />
+              Print Grid
+            </Button>
+            <Button variant="destructive" size="sm" onClick={clearData}>
+              <Trash2 data-icon="inline-start" />
+              Clear
+            </Button>
+          </div>
           <input ref={b50FileRef} type="file" accept=".json" className="hidden" onChange={handleB50File} />
           <input ref={cacheFileRef} type="file" accept="*" className="hidden" onChange={handleCacheFile} />
         </div>
 
         {status.show && (
-          <div className="max-w-2xl mx-auto mb-4">
-            <Alert
-              variant={status.type === 'danger' ? 'destructive' : 'default'}
-              className={statusAlertClass(status.type)}
-              style={{ whiteSpace: 'pre-line' }}
-            >
-              <AlertDescription>{status.msg}</AlertDescription>
-            </Alert>
-          </div>
+          <Alert
+            variant={status.type === 'danger' ? 'destructive' : 'default'}
+            className={`mb-4 ${statusAlertClass(status.type)}`}
+            style={{ whiteSpace: 'pre-line' }}
+          >
+            <AlertDescription>{status.msg}</AlertDescription>
+          </Alert>
         )}
 
-        <div className="flex justify-center gap-6 mb-6 text-sm text-muted-foreground">
-          <span className="flex items-center gap-2">
-            <span className="inline-block w-1 h-4 rounded" style={{ background: '#007bff' }} />
-            Old Charts (PRE-PRiSM)
-          </span>
-          <span className="flex items-center gap-2">
-            <span className="inline-block w-1 h-4 rounded" style={{ background: '#28a745' }} />
-            New Charts (PRiSM PLUS / CiRCLE)
-          </span>
+        <div className="rounded-xl border bg-card shadow-sm p-4 mb-6">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-3">Add Song</p>
+          <form className="flex flex-wrap gap-3 items-end" autoComplete="off" onSubmit={addSong}>
+            <div className="flex flex-col gap-1.5 flex-1 min-w-[200px]">
+              <Label htmlFor="song-input">Song Name</Label>
+              <div className="relative">
+                <Input
+                  id="song-input"
+                  type="text"
+                  value={songInput}
+                  required
+                  onChange={e => { setSongInput(e.target.value); buildDropdown(e.target.value) }}
+                  placeholder="Song Name or Alias"
+                />
+                {dropdown.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 z-50 mt-1 max-h-48 overflow-y-auto rounded-lg border bg-popover text-popover-foreground shadow-md">
+                    {dropdown.map((m, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground transition-colors"
+                        onClick={() => { setSongInput(m.value); setDropdown([]) }}
+                      >
+                        {m.value}
+                        {m.type === 'fuzzy' && <span className="text-muted-foreground text-xs ml-1">({m.sim}% match)</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label>Difficulty</Label>
+              <Select value={difficulty} onValueChange={setDifficulty}>
+                <SelectTrigger className="w-36">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {['Basic', 'Advanced', 'Expert', 'Master', 'Re:Master'].map(d => (
+                      <SelectItem key={d} value={d}>{d}</SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="achievement-input">Achievement (%)</Label>
+              <Input
+                id="achievement-input"
+                type="number"
+                className="w-36"
+                step="0.0001"
+                min="0"
+                max="101"
+                value={achievement}
+                required
+                onChange={e => setAchievement(e.target.value)}
+                placeholder="e.g. 100.5"
+              />
+            </div>
+            <Button type="submit">Add Song</Button>
+          </form>
         </div>
 
-        <form className="flex flex-wrap gap-3 items-center mb-6 relative" autoComplete="off" onSubmit={addSong}>
-          <div className="flex items-center gap-2">
-            <Label htmlFor="song-input">Song Name:</Label>
-          </div>
-          <div className="relative" style={{ minWidth: 250 }}>
-            <Input
-              id="song-input"
-              type="text"
-              value={songInput}
-              required
-              onChange={e => { setSongInput(e.target.value); buildDropdown(e.target.value) }}
-              placeholder="Song Name or Alias"
-            />
-            {dropdown.length > 0 && (
-              <div className="absolute top-full left-0 right-0 z-50 mt-1 max-h-48 overflow-y-auto rounded-lg border bg-popover text-popover-foreground shadow-md">
-                {dropdown.map((m, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground transition-colors"
-                    onClick={() => { setSongInput(m.value); setDropdown([]) }}
-                  >
-                    {m.value}
-                    {m.type === 'fuzzy' && <span className="text-muted-foreground text-xs ml-1">({m.sim}% match)</span>}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-          <Label>Difficulty:</Label>
-          <Select value={difficulty} onValueChange={setDifficulty}>
-            <SelectTrigger className="w-36">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                {['Basic', 'Advanced', 'Expert', 'Master', 'Re:Master'].map(d => (
-                  <SelectItem key={d} value={d}>{d}</SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-          <Label htmlFor="achievement-input">Achievement:</Label>
-          <Input
-            id="achievement-input"
-            type="number"
-            className="w-32"
-            step="0.0001"
-            min="0"
-            max="101"
-            value={achievement}
-            required
-            onChange={e => setAchievement(e.target.value)}
-          />
-          <Button type="submit">Add</Button>
-        </form>
-
-        <p className="text-sm text-muted-foreground mb-6 flex items-center gap-1">
-          <Info className="size-4" />
-          If you want to add an alias to a song, consider clicking Chart Database!
+        <p className="text-xs text-muted-foreground mb-6 flex items-center gap-1.5 bg-muted/50 border rounded-lg px-3 py-2">
+          <Info className="size-3.5 shrink-0" />
+          To add an alias to a song, visit the Chart Database page.
         </p>
 
-        <h2 className="text-xl font-semibold mt-4 mb-3">All Songs (Old + New) Grid View</h2>
-        <div ref={gridRef} className="wide-grid-container mb-6" style={{ background: '#fff', color: '#111' }}>
-          <table className="wide-grid-table" style={{ tableLayout: 'fixed', borderCollapse: 'collapse' }}>
-            <tbody>
-              {Array.from({ length: 10 }, (_, row) => (
-                <tr key={row}>
-                  {Array.from({ length: 5 }, (_, col) => {
-                    const song = row < 7 ? oldPad[row * 5 + col] : newPad[(row - 7) * 5 + col]
-                    return <SongCell key={col} song={song ?? null} songDict={maimaiSongsDict} divider={row === 7} />
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        {count > 0 && (
+        <div className="rounded-xl border bg-card shadow-sm mb-6 overflow-hidden">
+          <div ref={gridRef} className="b50-stage">
+            <div className="flex flex-wrap items-center gap-4 px-5 py-4">
+              <div className="flex flex-col min-w-0">
+                <span className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: '#c4b5fd' }}>Player</span>
+                <span className="text-2xl font-black leading-tight truncate" style={{ color: '#fff', textShadow: '0 2px 12px rgba(236,72,153,0.5)' }}>
+                  {username || 'Unnamed Player'}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 ml-auto">
+                {display.old_songs.length > 0 && (
+                  <div className="rounded-lg px-3 py-1.5 text-center" style={{ background: 'rgba(59,130,246,0.15)', border: '1px solid rgba(96,165,250,0.4)' }}>
+                    <div className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#93c5fd' }}>Old B35</div>
+                    <div className="text-lg font-black leading-none mt-0.5" style={{ color: '#fff' }}>{oldRating}</div>
+                  </div>
+                )}
+                <div className="rounded-lg px-4 py-1.5 text-center" style={{ background: 'linear-gradient(135deg, #ec4899 0%, #a855f7 100%)', boxShadow: '0 4px 14px rgba(236,72,153,0.4)' }}>
+                  <div className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#fbcfe8' }}>Total</div>
+                  <div className="text-xl font-black leading-none mt-0.5" style={{ color: '#fff' }}>{totalRating}</div>
+                </div>
+                {display.new_songs.length > 0 && (
+                  <div className="rounded-lg px-3 py-1.5 text-center" style={{ background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(134,239,172,0.4)' }}>
+                    <div className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#86efac' }}>New B15</div>
+                    <div className="text-lg font-black leading-none mt-0.5" style={{ color: '#fff' }}>{newRating}</div>
+                  </div>
+                )}
+              </div>
+              <div className="w-full text-xs" style={{ color: '#cbd5e1' }}>
+                {count} songs · avg {avgRating} per song
+              </div>
+            </div>
 
-        <SongTable label="Old Songs" songs={tableOld} idPrefix="old" />
-        <SongTable label="New Songs" songs={tableNew} idPrefix="new" />
+            {display.old_songs.length > 0 && (
+              <>
+                <div className="b50-section-banner b50-banner-old">
+                  <span>★ Best 35 · Old Charts (PRE-PRiSM)</span>
+                  <span className="b50-banner-stat">{oldRating}</span>
+                </div>
+                <div className="b50-grid">
+                  {oldPad.slice(0, 35).map((s, i) => (
+                    <SongCell key={i} song={s ?? null} songDict={maimaiSongsDict} />
+                  ))}
+                </div>
+              </>
+            )}
+
+            {display.new_songs.length > 0 && (
+              <>
+                <div className="b50-section-banner b50-banner-new">
+                  <span>★ Best 15 · New Charts (PRiSM PLUS / CiRCLE)</span>
+                  <span className="b50-banner-stat">{newRating}</span>
+                </div>
+                <div className="b50-grid pb-4">
+                  {newPad.slice(0, 15).map((s, i) => (
+                    <SongCell key={i} song={s ?? null} songDict={maimaiSongsDict} />
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+        )}
+
+        {tableOld.length > 0 && (
+          <div className="rounded-xl border bg-card shadow-sm overflow-hidden mb-6">
+            <div className="px-4 py-3 border-b bg-muted/30">
+              <h2 className="text-sm font-semibold">Old Songs — Best 35</h2>
+            </div>
+            <SongTable label="Old Songs" songs={tableOld} idPrefix="old" />
+          </div>
+        )}
+        {tableNew.length > 0 && (
+          <div className="rounded-xl border bg-card shadow-sm overflow-hidden mb-6">
+            <div className="px-4 py-3 border-b bg-muted/30">
+              <h2 className="text-sm font-semibold">New Songs — Best 15</h2>
+            </div>
+            <SongTable label="New Songs" songs={tableNew} idPrefix="new" />
+          </div>
+        )}
       </div>
     </MainLayout>
   )
