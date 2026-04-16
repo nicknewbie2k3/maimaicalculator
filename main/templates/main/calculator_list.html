@@ -427,6 +427,7 @@
     <script>
       // localStorage B50 Management
       const B50_STORAGE_KEY = 'maimai_b50_data';
+      const FULL_STORAGE_KEY = 'maimai_full_scores_data';
 
       // Song database for reference
       const maimaiSongsDict = {
@@ -447,6 +448,19 @@
 
       function saveB50Data(data) {
         localStorage.setItem(B50_STORAGE_KEY, JSON.stringify(data));
+      }
+
+      function getFullData() {
+        const data = localStorage.getItem(FULL_STORAGE_KEY);
+        return data ? JSON.parse(data) : null;
+      }
+
+      function saveFullData(data) {
+        try {
+          localStorage.setItem(FULL_STORAGE_KEY, JSON.stringify(data));
+        } catch (e) {
+          console.warn('Failed to save full data to localStorage', e);
+        }
       }
 
       // Add song to localStorage
@@ -516,6 +530,25 @@
             }
             
             saveB50Data(b50Data);
+            // Also update full dataset (if present) so tables reflect all chart ratings including manual adds
+            try {
+              const fullData = getFullData() || { old_songs: [], new_songs: [] };
+              const fullTarget = isNewSong ? fullData.new_songs : fullData.old_songs;
+              const fullExistingIndex = fullTarget.findIndex(song => song.song_name === songData.song_name && song.difficulty_type === songData.difficulty_type);
+              if (fullExistingIndex !== -1) {
+                if (songData.achievement > fullTarget[fullExistingIndex].achievement) {
+                  fullTarget[fullExistingIndex] = songData;
+                }
+              } else {
+                fullTarget.push(songData);
+              }
+              // Keep full dataset sorted for convenience (do not truncate)
+              fullData.old_songs.sort((a, b) => b.calculated_rating - a.calculated_rating);
+              fullData.new_songs.sort((a, b) => b.calculated_rating - a.calculated_rating);
+              saveFullData(fullData);
+            } catch (e) {
+              console.warn('Could not update full dataset in localStorage', e);
+            }
             scheduleUpdateDisplay();
             
             // Reset form
@@ -642,8 +675,9 @@
         }
         
         // Update both grid and table displays
+        const fullData = getFullData();
         updateGridDisplay(b50Data);
-        updateTableViews(b50Data);
+        updateTableViews(b50Data, fullData);
       }
 
       // Coalesced scheduler for updateDisplay to avoid repeated synchronous layout work
@@ -708,31 +742,33 @@
       }
 
       // Function to update table views for old and new songs
-      function updateTableViews(b50Data) {
-        // Update Old Songs table
-        updateSongTable('old', b50Data.old_songs);
-        
-        // Update New Songs table  
-        updateSongTable('new', b50Data.new_songs);
-        
-        // Update headers without "Best X" text
+      function updateTableViews(b50Data, fullData) {
+        // If we have a full dataset (from conversion/import), prefer that for tables
+        const oldSongsForTable = (fullData && fullData.old_songs && fullData.old_songs.length > 0) ? fullData.old_songs : b50Data.old_songs;
+        const newSongsForTable = (fullData && fullData.new_songs && fullData.new_songs.length > 0) ? fullData.new_songs : b50Data.new_songs;
+
+        // Update Old/New Songs tables
+        updateSongTable('old', oldSongsForTable);
+        updateSongTable('new', newSongsForTable);
+
+        // Update headers to reflect table counts (use fullData counts when present)
         const oldTableHeader = document.getElementById('oldSongsTableHeader');
         const newTableHeader = document.getElementById('newSongsTableHeader');
         if (oldTableHeader) {
-          oldTableHeader.textContent = `Old Songs (${b50Data.old_songs.length})`;
+          oldTableHeader.textContent = `Old Songs (${oldSongsForTable.length})`;
         }
         if (newTableHeader) {
-          newTableHeader.textContent = `New Songs (${b50Data.new_songs.length})`;
+          newTableHeader.textContent = `New Songs (${newSongsForTable.length})`;
         }
-        
-        // Calculate and update rating totals
+
+        // Calculate and update rating totals based on the B50 grid selection (b50Data)
         const oldTotalRating = b50Data.old_songs.reduce((sum, song) => sum + (song.calculated_rating || 0), 0);
         const newTotalRating = b50Data.new_songs.reduce((sum, song) => sum + (song.calculated_rating || 0), 0);
         const totalRating = oldTotalRating + newTotalRating;
         const avgRating = b50Data.old_songs.length + b50Data.new_songs.length > 0 ? 
                          Math.round(totalRating / (b50Data.old_songs.length + b50Data.new_songs.length)) : 0;
-        
-        // Update the header display for B50 mode
+
+        // Update the header display for B50 mode (grid totals remain based on the capped B50 selection)
         document.querySelector('h2').textContent = `Total Rating: ${totalRating}`;
         document.querySelector('h4').innerHTML = `
           Old Chart Total Rating: ${oldTotalRating} &nbsp;|&nbsp;
@@ -855,6 +891,8 @@
             // Re-categorize imported data based on version information
             const originalOldCount = (data.data.old_songs || []).length;
             const originalNewCount = (data.data.new_songs || []).length;
+            // Save the full imported dataset for table display
+            saveFullData(data.data);
             const recategorizedData = recategorizeB50Data(data.data);
             
             // Save to localStorage
@@ -920,25 +958,13 @@
             statusDiv.textContent = data.message;
             
             // Store the B35+15 data in localStorage and update grid display
-              if (data.b35_15_data) {
-              localStorage.setItem('maimai_b50_data', JSON.stringify(data.b35_15_data));
+            if (data.b35_15_data) {
+              // Save the grid-limited B50 selection
+              saveB50Data(data.b35_15_data);
+              // Save the full dataset so tables can display all charts
+              if (data.data) saveFullData(data.data);
+              // Update UI (grid + tables will be refreshed by scheduleUpdateDisplay())
               scheduleUpdateDisplay();
-              
-              // Also update tables with ALL scores (not just B35+15)
-              if (data.data) {
-                updateSongTable('old', data.data.old_songs);
-                updateSongTable('new', data.data.new_songs);
-                
-                // Update table headers to remove "Best X" text
-                const oldTableHeader = document.getElementById('oldSongsTableHeader');
-                const newTableHeader = document.getElementById('newSongsTableHeader');
-                if (oldTableHeader) {
-                  oldTableHeader.textContent = `Old Songs (${data.data.old_songs.length})`;
-                }
-                if (newTableHeader) {
-                  newTableHeader.textContent = `New Songs (${data.data.new_songs.length})`;
-                }
-              }
             }
             
             setTimeout(() => {
@@ -1013,6 +1039,7 @@
 
         // Clear localStorage
         saveB50Data({ old_songs: [], new_songs: [] });
+        try { localStorage.removeItem(FULL_STORAGE_KEY); } catch (e) {}
         scheduleUpdateDisplay();
 
         statusDiv.className = 'alert alert-success';

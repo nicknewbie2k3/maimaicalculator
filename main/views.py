@@ -2,6 +2,7 @@ import json
 import zlib
 import gzip
 import bz2
+import re
 from decimal import Decimal, InvalidOperation, ROUND_DOWN
 from datetime import datetime
 from django.shortcuts import render, redirect
@@ -16,6 +17,155 @@ def parse_decimal(val):
         return Decimal(val)
     except (InvalidOperation, TypeError, ValueError):
         return None
+
+
+def find_maimai_song_by_title(title):
+    """Lookup helper that tries exact title, tag-normalized variants, aliases, and partial matches.
+
+    Enhanced normalization: converts fullwidth punctuation to ASCII, normalizes
+    curly quotes/apostrophes, collapses whitespace, and handles common
+    'feat.' punctuation differences. Also supports a small special-case map for
+    problematic cache titles that don't match DB spelling/spacing.
+    """
+    if not title:
+        return None
+
+    def _normalize_for_lookup(s: str) -> str:
+        s = s.strip()
+        # Fullwidth and punctuation normalization
+        replacements = {
+            '～': '~', '〜': '~', '（': '(', '）': ')', '【': '[', '】': ']', '　': ' ',
+            '＃': '#', '＆': '&', '：': ':', '’': "'", '‘': "'", '“': '"', '”': '"',
+            '—': '-', '–': '-', '。': '.', '、': ',', '．': '.', '：': ':', '･': '･'
+        }
+        for k, v in replacements.items():
+            s = s.replace(k, v)
+
+        # Normalize common punctuation variants and spacing
+        s = s.replace('feat.', 'feat').replace('Feat.', 'Feat')
+        s = s.replace('. ', '.').replace(' .', '.')
+        # Normalize curly quotes to ASCII
+        s = s.replace('“', '"').replace('”', '"')
+        s = s.replace("’", "'").replace("‘", "'")
+
+        # Collapse whitespace
+        s = re.sub(r'\s+', ' ', s).strip()
+        return s
+
+    # Small special-case title map (normalized_key -> canonical DB title)
+    special_map = {
+        _normalize_for_lookup('VIIIBit Explorer (ST)').lower(): 'VIIIbit Explorer [STD]',
+        _normalize_for_lookup('Bad Apple!! feat nomico').lower(): 'Bad Apple!! feat.nomico [STD]',
+        _normalize_for_lookup('Sunday Night feat. Kanata.N').lower(): 'Sunday Night feat Kanata.N [DX]',
+        _normalize_for_lookup('“411Ψ892”').lower(): '"411Ψ892" [DX]',
+        _normalize_for_lookup("World’s end loneliness").lower(): "World's end loneliness [DX]",
+        _normalize_for_lookup('＃狂った民族２ PRAVARGYAZOOQA').lower(): '#狂った民族２ PRAVARGYAZOOQA [DX]',
+        _normalize_for_lookup('Help me, ERINNNNNN!! (Band ver.)').lower(): 'Help me, ERINNNNNN!!（Band ver.） [STD]',
+        _normalize_for_lookup("Don't Fight The Music").lower(): "Don't Fight The Music [DX]",
+        _normalize_for_lookup('おべんきょうたいむ').lower(): 'おべんきょうたいむ [DX]',
+        # Added mappings for recently reported missing/oddly-formatted titles
+        _normalize_for_lookup('セイクリッド　ルイン').lower(): 'セイクリッド　ルイン [STD]',
+        _normalize_for_lookup('大輪の魂 (feat. AO, 司芭扶)').lower(): '大輪の魂 (feat. AO, 司芭扶) [DX]',
+        _normalize_for_lookup('ここからはじまるプロローグ。').lower(): 'ここからはじまるプロローグ。 [DX]',
+        _normalize_for_lookup('Tic Tac DREAMIN’').lower(): 'Tic Tac DREAMIN’ [STD]',
+        _normalize_for_lookup('メイトなやつら（FEAT. 天開司, 佐藤ホームズ, あっくん大魔王 & 歌衣メイカ)').lower(): 'メイトなやつら（FEAT. 天開司, 佐藤ホームズ, あっくん大魔王 & 歌衣メイカ） [DX]',
+        _normalize_for_lookup('Make Up Your World feat. キョンシーのCiちゃん & らっぷびと').lower(): 'Make Up Your World feat. キョンシーのCiちゃん & らっぷびと [DX]',
+        _normalize_for_lookup('宛城、炎上！！').lower(): '宛城、炎上！！ [DX]',
+        _normalize_for_lookup('ネコ日和。[DX]').lower(): 'ネコ日和。 [DX]',
+        _normalize_for_lookup('ぼくたちいつでも　しゅわっしゅわ！').lower(): 'ぼくたちいつでも　しゅわっしゅわ！ [DX]',
+        _normalize_for_lookup('【東方ニコカラ】秘神マターラ feat.魂音泉【IOSYS】').lower(): '【東方ニコカラ】秘神マターラ feat.魂音泉【IOSYS】 [STD]',
+        _normalize_for_lookup('オーディエンスを沸かす程度の能力 feat.タイツォン').lower(): 'オーディエンスを沸かす程度の能力 feat.タイツォン [STD]',
+        _normalize_for_lookup('Bad Apple!! feat.nomico (Tetsuya Komuro Remix)').lower(): 'Bad Apple!! feat.nomico (Tetsuya Komuro Remix) [DX]',
+    }
+
+    normalized_input = _normalize_for_lookup(title)
+    # If a special-case mapping exists, use it as the raw title to query
+    if normalized_input.lower() in special_map:
+        t_raw = special_map[normalized_input.lower()]
+    else:
+        t_raw = title.strip()
+
+    # Try exact as-provided or mapped title first
+    try:
+        exact = MaimaiSong.objects.filter(title=t_raw).first()
+        if exact:
+            return exact
+    except Exception:
+        pass
+
+    # Use normalized form for candidate generation
+    t = normalized_input.replace('～', '~').replace('〜', '~')
+
+    # Remove common trailing tags if present to get base name
+    base = t
+    for tag in (' [DX]', '[DX]', ' [ST]', '[ST]', ' [STD]', '[STD]'):
+        if base.endswith(tag):
+            base = base[:-len(tag)].strip()
+
+    # Generate tilde variants for the base (ASCII, fullwidth, wave dash)
+    tilde_variants = ['~', '～', '〜']
+    base_variants = set()
+    canonical_base = base.replace('～', '~').replace('〜', '~')
+    for tv in tilde_variants:
+        base_variants.add(canonical_base.replace('~', tv))
+
+    # Build candidate titles from base variants with/without tags
+    candidates = []
+    for b in base_variants:
+        for tag in ['STD', 'ST', 'DX']:
+            candidates.append(f"{b} [{tag}]")
+            candidates.append(f"{b}[{tag}]")
+        candidates.append(b)
+    candidates.append(t)
+
+    # Try exact candidate matches (case-sensitive then case-insensitive)
+    for c in candidates:
+        try:
+            s = MaimaiSong.objects.filter(title=c).first()
+            if s:
+                return s
+        except Exception:
+            continue
+
+    for c in candidates:
+        try:
+            s = MaimaiSong.objects.filter(title__iexact=c).first()
+            if s:
+                return s
+        except Exception:
+            continue
+
+    # Alias match: compare normalized alias base to our canonical base
+    canonical_base_lower = canonical_base.lower()
+    songs_with_aliases = MaimaiSong.objects.filter(aliases__isnull=False)
+    for s in songs_with_aliases:
+        try:
+            aliases_list = s.get_aliases_list()
+        except Exception:
+            aliases_list = []
+        for alias in aliases_list:
+            a = alias.strip()
+            # Normalize alias text for comparison
+            a = _normalize_for_lookup(a).replace('～', '~').replace('〜', '~')
+            for tag in (' [DX]', '[DX]', ' [ST]', '[ST]', ' [STD]', '[STD]'):
+                if a.endswith(tag):
+                    a = a[:-len(tag)].strip()
+            if a.lower() == canonical_base_lower:
+                return s
+
+    # Final fallback: partial match in title using canonical base variants
+    # Only accept partial matches when the canonical base is reasonably long
+    # and yields a unique DB result to avoid incorrect cross-matches.
+    if len(canonical_base) >= 6:
+        for b in base_variants:
+            try:
+                qs = MaimaiSong.objects.filter(title__icontains=b)
+                if qs.count() == 1:
+                    return qs.first()
+            except Exception:
+                continue
+
+    return None
 
 def calculator_list(request):
     if request.method == 'POST':
@@ -39,8 +189,8 @@ def calculator_list(request):
             if achievement_for_calc > Decimal('100.5'):
                 achievement_for_calc = Decimal('100.5')
 
-            # Get chart difficulty and version from MaimaiSong
-            song = MaimaiSong.objects.filter(title=song_name).first()
+            # Get chart difficulty and version from MaimaiSong (use robust lookup)
+            song = find_maimai_song_by_title(song_name)
             chart_difficulty = None
             version = None
             if song:
@@ -233,7 +383,7 @@ def save_b50_data(request):
                     if 'version' not in song or not song['version']:
                         # Try to get version from database
                         try:
-                            maimai_song = MaimaiSong.objects.filter(title=song.get('song_name', '')).first()
+                            maimai_song = find_maimai_song_by_title(song.get('song_name', ''))
                             if maimai_song and maimai_song.version:
                                 song['version'] = maimai_song.version
                             else:
@@ -1105,12 +1255,13 @@ def alias_upload(request):
                 try:
                     song = MaimaiSong.objects.get(title=chart_name)
                 except MaimaiSong.DoesNotExist:
-                    # Try matching with [DX] and [ST] tags
+                    # Try matching with [DX], [ST], and [STD] tags (explicit variants)
                     possible_matches = MaimaiSong.objects.filter(
                         Q(title=f"{chart_name} [DX]") | 
-                        Q(title=f"{chart_name} [ST]")
+                        Q(title=f"{chart_name} [ST]") |
+                        Q(title=f"{chart_name} [STD]")
                     )
-                    
+
                     if possible_matches.exists():
                         if possible_matches.count() == 1:
                             # Only one match found
@@ -1122,7 +1273,7 @@ def alias_upload(request):
                             for matched_song in possible_matches:
                                 # Get existing aliases
                                 existing_aliases = matched_song.get_aliases_list()
-                                
+
                                 # Add new aliases (avoid duplicates)
                                 new_aliases_added = []
                                 for alias in chart_aliases:
@@ -1131,12 +1282,12 @@ def alias_upload(request):
                                         if clean_alias not in existing_aliases:
                                             existing_aliases.append(clean_alias)
                                             new_aliases_added.append(clean_alias)
-                                
+
                                 if new_aliases_added:
                                     # Update the song with new aliases
                                     matched_song.set_aliases_list(existing_aliases)
                                     matched_song.save()
-                                    
+
                                     aliases_text = ', '.join([f'"{alias}"' for alias in new_aliases_added])
                                     results.append(f'✓ "{matched_song.title}": Added {len(new_aliases_added)} aliases ({aliases_text})')
                                     total_aliases_added += len(new_aliases_added)
@@ -1144,9 +1295,12 @@ def alias_upload(request):
                                 else:
                                     results.append(f'○ "{matched_song.title}": No new aliases added (all already exist)')
                                     multiple_processed += 1
-                            
+
                             total_processed += multiple_processed
                             continue  # Skip the single song processing below
+
+                    # Fall back to robust lookup using normalized/assigned title and aliases
+                    song = find_maimai_song_by_title(chart_name)
                 
                 if not song:
                     results.append(f'Entry {i+1}: Song "{chart_name}" not found in database (tried exact match and [DX]/[ST] variants)')
@@ -1320,6 +1474,9 @@ def convert_cache_data_to_all_scores_format(cache_data):
                 
             title = song_data.get('title', song_key).strip()
             title = title.replace('\r\n', '').replace('\n', '').strip()
+            # Normalize common tilde/wave characters so variants pair correctly
+            # e.g. ASCII ~, fullwidth '～' and wave dash '〜'
+            title = title.replace('～', '~').replace('〜', '~')
             
             if not title:
                 continue
@@ -1328,14 +1485,24 @@ def convert_cache_data_to_all_scores_format(cache_data):
             base_name = title
             chart_tag = None
             
-            if title.endswith(' [DX]'):
-                base_name = title[:-5]  # Remove ' [DX]'
+            # Accept both spaced and no-space tag variants (e.g. '[DX]' and ' [DX]')
+            if title.endswith(' [DX]') or title.endswith('[DX]'):
+                if title.endswith(' [DX]'):
+                    base_name = title[:-5].strip()
+                else:
+                    base_name = title[:-4].strip()
                 chart_tag = 'DX'
-            elif title.endswith(' [ST]'):
-                base_name = title[:-5]  # Remove ' [ST]'
+            elif title.endswith(' [ST]') or title.endswith('[ST]'):
+                if title.endswith(' [ST]'):
+                    base_name = title[:-5].strip()
+                else:
+                    base_name = title[:-4].strip()
                 chart_tag = 'ST'
-            elif title.endswith(' [STD]'):
-                base_name = title[:-6]  # Remove ' [STD]'
+            elif title.endswith(' [STD]') or title.endswith('[STD]'):
+                if title.endswith(' [STD]'):
+                    base_name = title[:-6].strip()
+                else:
+                    base_name = title[:-5].strip()
                 chart_tag = 'ST'  # Treat STD as ST for processing
             
             if base_name not in song_groups:
@@ -1352,19 +1519,45 @@ def convert_cache_data_to_all_scores_format(cache_data):
         for base_name, songs in song_groups.items():
             if len(songs) == 2:
                 song1, song2 = songs
-                
-                # Case 1: One has tag, one doesn't - assign complementary tag
+                # Case 1: One has tag, one doesn't - apply STD/DX assignment rules
                 if song1['chart_tag'] and not song2['chart_tag']:
-                    complementary_tag = 'DX' if song1['chart_tag'] == 'ST' else 'ST'
-                    new_title = f"{base_name} [{complementary_tag}]"
-                    level_metadata[song2['song_key']]['title'] = new_title
-                    print(f"Tag assignment: '{song2['original_title']}' → '{new_title}'")
-                    
+                    ot = song1['original_title']
+                    # If one is DX, the other should be STD
+                    if ot.endswith(' [DX]'):
+                        new_title = f"{base_name} [STD]"
+                        level_metadata[song2['song_key']]['title'] = new_title
+                        print(f"Tag assignment: '{song2['original_title']}' → '{new_title}'")
+                    # If one is ST, convert ST -> STD and make the other DX
+                    elif ot.endswith(' [ST]'):
+                        new_title1 = f"{base_name} [STD]"
+                        level_metadata[song1['song_key']]['title'] = new_title1
+                        print(f"Tag assignment: '{song1['original_title']}' → '{new_title1}'")
+                        new_title2 = f"{base_name} [DX]"
+                        level_metadata[song2['song_key']]['title'] = new_title2
+                        print(f"Tag assignment: '{song2['original_title']}' → '{new_title2}'")
+                    else:
+                        # Default: make the other DX (covers existing STD or unexpected tags)
+                        new_title = f"{base_name} [DX]"
+                        level_metadata[song2['song_key']]['title'] = new_title
+                        print(f"Tag assignment: '{song2['original_title']}' → '{new_title}'")
+
                 elif song2['chart_tag'] and not song1['chart_tag']:
-                    complementary_tag = 'DX' if song2['chart_tag'] == 'ST' else 'ST'
-                    new_title = f"{base_name} [{complementary_tag}]"
-                    level_metadata[song1['song_key']]['title'] = new_title
-                    print(f"Tag assignment: '{song1['original_title']}' → '{new_title}'")
+                    ot = song2['original_title']
+                    if ot.endswith(' [DX]'):
+                        new_title = f"{base_name} [STD]"
+                        level_metadata[song1['song_key']]['title'] = new_title
+                        print(f"Tag assignment: '{song1['original_title']}' → '{new_title}'")
+                    elif ot.endswith(' [ST]'):
+                        new_title2 = f"{base_name} [STD]"
+                        level_metadata[song2['song_key']]['title'] = new_title2
+                        print(f"Tag assignment: '{song2['original_title']}' → '{new_title2}'")
+                        new_title1 = f"{base_name} [DX]"
+                        level_metadata[song1['song_key']]['title'] = new_title1
+                        print(f"Tag assignment: '{song1['original_title']}' → '{new_title1}'")
+                    else:
+                        new_title = f"{base_name} [DX]"
+                        level_metadata[song1['song_key']]['title'] = new_title
+                        print(f"Tag assignment: '{song1['original_title']}' → '{new_title}'")
                 
                 # Case 2: Neither has tag - no action (let database lookup handle it)
                 # Case 3: Both have tags - no action (already properly tagged)
@@ -1406,49 +1599,183 @@ def convert_cache_data_to_all_scores_format(cache_data):
                 # Skip songs without play data (achievementRate = 0)
                 if achievement_rate == 0:
                     continue
+
+                # Skip Easy difficulties explicitly — database uses Basic/STD, not 'Easy'
+                if isinstance(difficulty_alias, str) and difficulty_alias.lower() in ['easy', 'e']:
+                    print(f"Skipping Easy difficulty for {clean_song_name} (alias: {difficulty_alias})")
+                    continue
                 
-                # Search for song in database using the same method as the main project
-                song_db = None
-                
-                # First try exact match
-                try:
-                    song_db = MaimaiSong.objects.get(title=clean_song_name)
-                except MaimaiSong.DoesNotExist:
-                    # Try matching with [DX] and [STD] tags
-                    possible_matches = MaimaiSong.objects.filter(
-                        Q(title=f"{clean_song_name} [DX]") | 
-                        Q(title=f"{clean_song_name} [STD]")
-                    )
-                    
-                    if possible_matches.exists():
-                        song_db = possible_matches.first()
-                
-                # If still not found, try case-insensitive exact match
+                # Use the assigned title (possibly modified by tag preprocessing) as first lookup
+                # If the cache title starts with a front tag like '[宴]' or '[宴/バディ/2P]', skip it
+                # per user request: do not attempt name searching on front-tagged entries.
+                if re.match(r'^\[[^\]]+\]\s*', clean_song_name):
+                    print(f"Skipping front-tagged song (cache): {clean_song_name}")
+                    continue
+
+                assigned_title = clean_song_name
+                # Ensure base_name is available for candidate generation and fallback logic
+                base_name = clean_song_name
+                # Prefer the robust lookup helper which handles tag variants and aliases
+                song_db = find_maimai_song_by_title(assigned_title)
+
                 if not song_db:
-                    song_db = MaimaiSong.objects.filter(title__iexact=clean_song_name).first()
-                
-                # If still not found, try checking aliases
-                if not song_db:
-                    # Search in songs that have aliases containing this song name
-                    songs_with_aliases = MaimaiSong.objects.filter(aliases__isnull=False)
-                    for song in songs_with_aliases:
-                        aliases_list = song.get_aliases_list()
-                        if any(clean_song_name.lower() == alias.lower() for alias in aliases_list):
-                            song_db = song
+                    # Normalize title for lookup: strip trailing chart tag and normalize [ST] -> [STD]
+                    base_name = clean_song_name
+                    # Normalize common trailing tags
+                    if clean_song_name.endswith(' [DX]'):
+                        base_name = clean_song_name[:-5].strip()
+                    elif clean_song_name.endswith(' [ST]'):
+                        # Treat [ST] as [STD] in the DB
+                        base_name = clean_song_name[:-5].strip()
+                    elif clean_song_name.endswith(' [STD]'):
+                        base_name = clean_song_name[:-6].strip()
+
+                    # Prepare candidate titles for lookup: include [STD]/[ST]/[DX] variants and no-space variants
+                    tags = ['STD', 'ST', 'DX']
+                    candidates = []
+                    for t in tags:
+                        candidates.append(f"{base_name} [{t}]")
+                        candidates.append(f"{base_name}[{t}]")
+                    candidates.append(base_name)
+
+                    # Helper to normalize alias/title for comparison
+                    def normalize_key(s):
+                        if not s:
+                            return ''
+                        s2 = s.strip()
+                        # remove trailing tag if present
+                        for t in [' [DX]', '[DX]', ' [ST]', '[ST]', ' [STD]', '[STD]']:
+                            if s2.endswith(t):
+                                s2 = s2[:-len(t)].strip()
+                        return s2.lower()
+
+                    # Try exact title match for each candidate (exact first)
+                    for candidate in candidates:
+                        try:
+                            song_db = MaimaiSong.objects.get(title=candidate)
                             break
-                
-                # Final fallback: partial match in title
-                if not song_db:
-                    song_db = MaimaiSong.objects.filter(title__icontains=clean_song_name).first()
+                        except MaimaiSong.DoesNotExist:
+                            continue
+
+                    # If still not found, try case-insensitive exact match on candidates
+                    if not song_db:
+                        for candidate in candidates:
+                            song_db = MaimaiSong.objects.filter(title__iexact=candidate).first()
+                            if song_db:
+                                break
+
+                    # If still not found, try checking aliases (case-insensitive) using normalized base name
+                    if not song_db:
+                        songs_with_aliases = MaimaiSong.objects.filter(aliases__isnull=False)
+                        base_norm = normalize_key(base_name)
+                        for s in songs_with_aliases:
+                            aliases_list = s.get_aliases_list()
+                            for alias in aliases_list:
+                                if normalize_key(alias) == base_norm:
+                                    song_db = s
+                                    break
+                            if song_db:
+                                break
+
+                    # Final fallback: partial match in title using base_name
+                    if not song_db:
+                        song_db = MaimaiSong.objects.filter(title__icontains=base_name).first()
                 
                 # Skip if we can't find the song in database
                 if not song_db:
-                    print(f"Song not found in database: {clean_song_name}")
+                    print(f"Song not found in database: {base_name}")
                     continue
                 
+                # Before mapping, if the matched DB record lacks the requested difficulty,
+                # try to find an alternative DB entry for the same base name that has it.
+                # Map difficulty alias to database field name
+                difficulty_type_mapped = difficulty_alias
+                alias_l = difficulty_alias.lower()
+                field_name = None
+                if alias_l in ['basic', 'bas', 'bsc']:
+                    field_name = 'lev_bas'
+                    difficulty_type_mapped = 'Basic'
+                elif alias_l in ['advanced', 'adv']:
+                    field_name = 'lev_adv'
+                    difficulty_type_mapped = 'Advanced'
+                elif alias_l in ['expert', 'exp']:
+                    field_name = 'lev_exp'
+                    difficulty_type_mapped = 'Expert'
+                elif alias_l in ['master', 'mas']:
+                    field_name = 'lev_mas'
+                    difficulty_type_mapped = 'Master'
+                elif alias_l in ['remaster', 'remas', 're:master']:
+                    field_name = 'lev_remas'
+                    difficulty_type_mapped = 'Re:Master'
+
+                # If we have a field to check and the current DB match lacks it, search alternatives
+                if song_db and field_name:
+                    try:
+                        current_val = getattr(song_db, field_name, None)
+                    except Exception:
+                        current_val = None
+
+                    if not current_val:
+                        # Candidate title variants
+                        tags = ['STD', 'ST', 'DX']
+                        candidates = []
+                        for t in tags:
+                            candidates.append(f"{base_name} [{t}]")
+                            candidates.append(f"{base_name}[{t}]")
+                        candidates.append(base_name)
+
+                        # Local normalize helper
+                        def normalize_key_local(s):
+                            if not s:
+                                return ''
+                            s2 = s.strip()
+                            for t in [' [DX]', '[DX]', ' [ST]', '[ST]', ' [STD]', '[STD]']:
+                                if s2.endswith(t):
+                                    s2 = s2[:-len(t)].strip()
+                            return s2.lower()
+
+                        found_alt = None
+                        # Exact title matches
+                        for cand in candidates:
+                            try:
+                                alt = MaimaiSong.objects.get(title=cand)
+                                if getattr(alt, field_name, None):
+                                    found_alt = alt
+                                    break
+                            except MaimaiSong.DoesNotExist:
+                                continue
+
+                        # Case-insensitive exact match
+                        if not found_alt:
+                            for cand in candidates:
+                                alt = MaimaiSong.objects.filter(title__iexact=cand).first()
+                                if alt and getattr(alt, field_name, None):
+                                    found_alt = alt
+                                    break
+
+                        # Alias-based search
+                        if not found_alt:
+                            songs_with_aliases = MaimaiSong.objects.filter(aliases__isnull=False)
+                            base_norm = normalize_key_local(base_name)
+                            for s in songs_with_aliases:
+                                try:
+                                    aliases_list = s.get_aliases_list()
+                                except Exception:
+                                    aliases_list = []
+                                for alias in aliases_list:
+                                    if normalize_key_local(alias) == base_norm:
+                                        if getattr(s, field_name, None):
+                                            found_alt = s
+                                            break
+                                if found_alt:
+                                    break
+
+                        if found_alt:
+                            song_db = found_alt
+                            print(f"Switched DB match for {base_name} - {difficulty_alias} to {song_db.title} (has {field_name})")
+
                 # Map difficulty alias to database field and get chart difficulty
                 chart_difficulty = None
-                difficulty_type_mapped = difficulty_alias
                 
                 if difficulty_alias.lower() in ['basic', 'bas', 'bsc']:
                     chart_difficulty = song_db.lev_bas
@@ -1468,7 +1795,20 @@ def convert_cache_data_to_all_scores_format(cache_data):
                 
                 # Skip if we don't have chart difficulty
                 if not chart_difficulty:
-                    print(f"Chart difficulty not found for {clean_song_name} - {difficulty_alias}")
+                    # Detailed debug: show what DB record we matched and what level fields it has
+                    try:
+                        db_info = {
+                            'matched_title': getattr(song_db, 'title', None),
+                            'lev_bas': getattr(song_db, 'lev_bas', None),
+                            'lev_adv': getattr(song_db, 'lev_adv', None),
+                            'lev_exp': getattr(song_db, 'lev_exp', None),
+                            'lev_mas': getattr(song_db, 'lev_mas', None),
+                            'lev_remas': getattr(song_db, 'lev_remas', None),
+                            'chart_type': getattr(song_db, 'chart_type', None),
+                        }
+                        print(f"Chart difficulty not found for {base_name} - {difficulty_alias}. DB match: {db_info}")
+                    except Exception as _e:
+                        print(f"Chart difficulty not found for {base_name} - {difficulty_alias}. (Could not inspect DB record) Error: {_e}")
                     continue
                 
                 chart_difficulty = float(chart_difficulty)
@@ -1532,17 +1872,17 @@ def convert_cache_data_to_all_scores_format(cache_data):
                 # Get version from database (fallback to 'Unknown' if not set)
                 version = song_db.version or 'Unknown'
                 
-                # Use the clean song name or database title
-                final_song_name = clean_song_name
+                # Prefer the assigned title (may include tag assigned earlier); override with DB title if it contains explicit tag
+                final_song_name = assigned_title
                 if song_db.title and (' [DX]' in song_db.title or ' [STD]' in song_db.title):
                     final_song_name = song_db.title
                 else:
                     # Check if the found song has a chart_type field we can use
                     if hasattr(song_db, 'chart_type') and song_db.chart_type:
                         if song_db.chart_type.upper() == 'DX':
-                            final_song_name = f"{clean_song_name} [DX]"
+                            final_song_name = f"{base_name} [DX]"
                         elif song_db.chart_type.upper() in ['STD', 'ST']:
-                            final_song_name = f"{clean_song_name} [STD]"
+                            final_song_name = f"{base_name} [STD]"
                 
                 # Create song entry
                 song_entry = {
