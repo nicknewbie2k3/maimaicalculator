@@ -1,5 +1,7 @@
 asgiref==3.9.2
 Django==5.2.5
+django-vite==3.0.4
+inertia-django==2.0.1
 pytz==2025.2
 setuptools==78.1.1
 sqlparse==0.5.3
