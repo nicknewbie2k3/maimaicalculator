@@ -1,16 +1,38 @@
 import { Link } from '@inertiajs/react'
 import React from 'react'
+import {
+  NavigationMenu,
+  NavigationMenuList,
+  NavigationMenuItem,
+  NavigationMenuLink,
+} from '@/components/ui/navigation-menu'
 
 export default function MainLayout({ children }: { children: React.ReactNode }) {
   return (
     <div>
-      <div className="container" style={{ maxWidth: 800, marginTop: 24, marginBottom: 0, background: 'none', boxShadow: 'none', padding: '16px 24px' }}>
-        <div style={{ display: 'flex', justifyContent: 'center', gap: '1.5rem' }}>
-          <Link href="/" className="button">Rating Calculator</Link>
-          <Link href="/chart-database/" className="button">Chart Database</Link>
-          <Link href="/databaseUpload/" className="button">Database Upload</Link>
+      <header className="border-b bg-background">
+        <div className="flex h-14 items-center px-6">
+          <NavigationMenu>
+            <NavigationMenuList>
+              <NavigationMenuItem>
+                <NavigationMenuLink render={<Link href="/" />}>
+                  Rating Calculator
+                </NavigationMenuLink>
+              </NavigationMenuItem>
+              <NavigationMenuItem>
+                <NavigationMenuLink render={<Link href="/chart-database/" />}>
+                  Chart Database
+                </NavigationMenuLink>
+              </NavigationMenuItem>
+              <NavigationMenuItem>
+                <NavigationMenuLink render={<Link href="/databaseUpload/" />}>
+                  Database Upload
+                </NavigationMenuLink>
+              </NavigationMenuItem>
+            </NavigationMenuList>
+          </NavigationMenu>
         </div>
-      </div>
+      </header>
       {children}
     </div>
   )

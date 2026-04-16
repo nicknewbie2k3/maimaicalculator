@@ -1,5 +1,8 @@
 import { router, usePage } from '@inertiajs/react'
 import MainLayout from '../layouts/MainLayout'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 
 interface DatabaseUploadPageProps {
   message?: string
@@ -15,16 +18,21 @@ export default function DatabaseUpload() {
 
   return (
     <MainLayout>
-      <div className="container my-4" style={{ maxWidth: 600 }}>
-        <h1>Upload Maimai Database JSON</h1>
+      <div className="max-w-lg mx-auto my-8 px-4">
+        <h1 className="text-2xl font-semibold mb-4">Upload Maimai Database JSON</h1>
         {message && (
-          <p className={message.startsWith('Error') ? 'text-danger' : 'text-success'}>{message}</p>
+          <p className={message.startsWith('Error') ? 'text-destructive text-sm mb-3' : 'text-green-600 text-sm mb-3'}>
+            {message}
+          </p>
         )}
-        <form onSubmit={handleSubmit} encType="multipart/form-data">
-          <div className="mb-3">
-            <input type="file" className="form-control" name="json_file" accept=".json" required />
+        <form onSubmit={handleSubmit} encType="multipart/form-data" className="flex flex-col gap-4">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="json_file">JSON File</Label>
+            <Input type="file" id="json_file" name="json_file" accept=".json" required />
           </div>
-          <button type="submit" className="btn btn-primary">Upload</button>
+          <div>
+            <Button type="submit">Upload</Button>
+          </div>
         </form>
       </div>
     </MainLayout>

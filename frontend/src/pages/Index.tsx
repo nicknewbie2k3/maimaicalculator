@@ -1,6 +1,34 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { usePage } from '@inertiajs/react'
 import MainLayout from '../layouts/MainLayout'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from '@/components/ui/table'
+import {
+  Download,
+  Upload,
+  ArrowLeftRight,
+  Camera,
+  Trash2,
+  Info,
+} from 'lucide-react'
 
 const B50_KEY = 'maimai_b50_data'
 const FULL_KEY = 'maimai_full_scores_data'
@@ -136,28 +164,47 @@ interface SongTableProps {
 function SongTable({ label, songs, idPrefix }: SongTableProps) {
   return (
     <>
-      <h2 id={`${idPrefix}Header`}>{label} ({songs.length})</h2>
-      <div className="table-responsive mb-4">
-        <table className="table table-striped table-bordered align-middle">
-          <thead className="table-dark">
-            <tr><th>#</th><th>Song Name</th><th>Difficulty</th><th>Rank</th><th>Achievement</th><th>Chart Difficulty</th><th>Calculated Rating</th></tr>
-          </thead>
-          <tbody>
+      <h2 className="text-xl font-semibold mt-8 mb-3" id={`${idPrefix}Header`}>
+        {label} ({songs.length})
+      </h2>
+      <div className="mb-6">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>#</TableHead>
+              <TableHead>Song Name</TableHead>
+              <TableHead>Difficulty</TableHead>
+              <TableHead>Rank</TableHead>
+              <TableHead>Achievement</TableHead>
+              <TableHead>Chart Difficulty</TableHead>
+              <TableHead>Calculated Rating</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {songs.length === 0
-              ? <tr><td colSpan={7} className="text-center">No songs found.</td></tr>
+              ? <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">No songs found.</TableCell></TableRow>
               : songs.map((s, i) => (
-                <tr key={i} className={isNewChart(s, {}) ? 'new-chart-row' : 'old-chart-row'}>
-                  <td>{i + 1}</td><td>{s.song_name}</td><td>{s.difficulty_type}</td><td>{s.rank}</td>
-                  <td>{parseFloat(String(s.achievement)).toFixed(4)}%</td>
-                  <td>{parseFloat(String(s.chart_difficulty)).toFixed(1)}</td>
-                  <td>{s.calculated_rating}</td>
-                </tr>
+                <TableRow key={i} className={isNewChart(s, {}) ? 'new-chart-row' : 'old-chart-row'}>
+                  <TableCell>{i + 1}</TableCell>
+                  <TableCell>{s.song_name}</TableCell>
+                  <TableCell>{s.difficulty_type}</TableCell>
+                  <TableCell>{s.rank}</TableCell>
+                  <TableCell>{parseFloat(String(s.achievement)).toFixed(4)}%</TableCell>
+                  <TableCell>{parseFloat(String(s.chart_difficulty)).toFixed(1)}</TableCell>
+                  <TableCell>{s.calculated_rating}</TableCell>
+                </TableRow>
               ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
     </>
   )
+}
+
+function statusAlertClass(type: string): string {
+  if (type === 'success') return 'border-green-500/50 bg-green-50 text-green-800 dark:bg-green-950/30 dark:text-green-400'
+  if (type === 'warning') return 'border-yellow-500/40 bg-yellow-50 text-yellow-800 dark:bg-yellow-950/30 dark:text-yellow-400'
+  return ''
 }
 
 export default function Index() {
@@ -201,14 +248,11 @@ export default function Index() {
     const v = val.toLowerCase()
     const matches: DropdownItem[] = []
     const seen = new Set<string>()
-
     const addMatch = (value: string, type: 'exact' | 'fuzzy') => {
       if (!seen.has(value)) { seen.add(value); matches.push({ value, type, sim: type === 'exact' ? 100 : 0 }) }
     }
-
     Object.keys(aliasToTitleMap).filter(a => a.toLowerCase().includes(v)).forEach(a => addMatch(aliasToTitleMap[a], 'exact'))
     allSongNames.filter(n => n.toLowerCase().includes(v)).forEach(n => addMatch(n, 'exact'))
-
     if (matches.length < 5) {
       Object.keys(aliasToTitleMap).forEach(a => {
         const t = aliasToTitleMap[a]
@@ -218,11 +262,7 @@ export default function Index() {
         if (!seen.has(n)) { const s = calcSimilarity(v, n.toLowerCase()); if (s >= 30) { seen.add(n); matches.push({ value: n, type: 'fuzzy', sim: s }) } }
       })
     }
-
-    matches.sort((a, b) => {
-      if (a.type !== b.type) return a.type === 'exact' ? -1 : 1
-      return b.sim - a.sim
-    })
+    matches.sort((a, b) => { if (a.type !== b.type) return a.type === 'exact' ? -1 : 1; return b.sim - a.sim })
     setDropdown(matches.slice(0, 10))
   }
 
@@ -287,7 +327,7 @@ export default function Index() {
       const res = await fetch('/convert-cache-to-all-scores/', { method: 'POST', body: fd })
       const data = await res.json() as { status: string; message: string; b35_15_data?: B50Data; data?: B50Data }
       if (data.status === 'success') {
-        if (data.b35_15_data) { writeB50(data.b35_15_data) }
+        if (data.b35_15_data) writeB50(data.b35_15_data)
         if (data.data) writeFull(data.data)
         showStatus(data.message, 'success', 5000)
       } else showStatus('Error: ' + data.message, 'danger', 7000)
@@ -343,74 +383,128 @@ export default function Index() {
 
   return (
     <MainLayout>
-      <div className="container-fluid my-4">
-        <h1 className="text-center mb-4">AstroDX Manual Rating Converter</h1>
-        <h2 className="text-center mb-4">Total Rating: {totalRating}</h2>
-        <h4 className="text-center mb-3">
+      <div className="w-full px-4 py-6">
+        <h1 className="text-2xl font-bold text-center mb-2">AstroDX Manual Rating Converter</h1>
+        <h2 className="text-xl font-semibold text-center mb-2">Total Rating: {totalRating}</h2>
+        <p className="text-center text-sm text-muted-foreground mb-6">
           Old Chart Total Rating: {oldRating} &nbsp;|&nbsp;
           New Chart Total Rating: {newRating} &nbsp;|&nbsp;
           Total Average Rating: {avgRating}
-        </h4>
+        </p>
 
-        <div className="text-center mb-4">
-          <button className="btn btn-success me-2" onClick={saveToFile}><i className="fas fa-download me-1" />Save B50 Data</button>
-          <button className="btn btn-primary me-2" onClick={() => b50FileRef.current?.click()}><i className="fas fa-upload me-1" />Load B50 Data</button>
-          <button className="btn btn-warning me-2" onClick={() => cacheFileRef.current?.click()}><i className="fas fa-exchange-alt me-1" />Convert Cache to B50</button>
-          <button className="btn btn-info me-2" onClick={printB50}><i className="fas fa-camera me-1" />Print B50</button>
-          <button className="btn btn-danger" onClick={clearData}><i className="fas fa-trash me-1" />Clear B50 Data</button>
-          <input ref={b50FileRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleB50File} />
-          <input ref={cacheFileRef} type="file" accept="*" style={{ display: 'none' }} onChange={handleCacheFile} />
-          {status.show && (
-            <div className={`alert alert-${status.type} mt-3`} style={{ whiteSpace: 'pre-line' }}>{status.msg}</div>
-          )}
-          <div className="text-center mt-2">
-            <small className="text-muted">
-              <span style={{ borderLeft: '4px solid #007bff', paddingLeft: 8, marginRight: 15 }}>Old Charts (PRE-PRiSM)</span>
-              <span style={{ borderLeft: '4px solid #28a745', paddingLeft: 8 }}>New Charts (PRiSM PLUS / CiRCLE)</span>
-            </small>
-          </div>
+        <div className="flex flex-wrap justify-center gap-2 mb-4">
+          <Button onClick={saveToFile}>
+            <Download data-icon="inline-start" />
+            Save B50 Data
+          </Button>
+          <Button variant="outline" onClick={() => b50FileRef.current?.click()}>
+            <Upload data-icon="inline-start" />
+            Load B50 Data
+          </Button>
+          <Button variant="outline" onClick={() => cacheFileRef.current?.click()}>
+            <ArrowLeftRight data-icon="inline-start" />
+            Convert Cache to B50
+          </Button>
+          <Button variant="secondary" onClick={printB50}>
+            <Camera data-icon="inline-start" />
+            Print B50
+          </Button>
+          <Button variant="destructive" onClick={clearData}>
+            <Trash2 data-icon="inline-start" />
+            Clear B50 Data
+          </Button>
+          <input ref={b50FileRef} type="file" accept=".json" className="hidden" onChange={handleB50File} />
+          <input ref={cacheFileRef} type="file" accept="*" className="hidden" onChange={handleCacheFile} />
         </div>
 
-        <form className="row g-3 align-items-center mb-4 position-relative" autoComplete="off" onSubmit={addSong}>
-          <div className="col-auto"><label className="col-form-label">Song Name:</label></div>
-          <div className="col-auto position-relative" style={{ minWidth: 250 }}>
-            <input
-              type="text" className="form-control" value={songInput} required
+        {status.show && (
+          <div className="max-w-2xl mx-auto mb-4">
+            <Alert
+              variant={status.type === 'danger' ? 'destructive' : 'default'}
+              className={statusAlertClass(status.type)}
+              style={{ whiteSpace: 'pre-line' }}
+            >
+              <AlertDescription>{status.msg}</AlertDescription>
+            </Alert>
+          </div>
+        )}
+
+        <div className="flex justify-center gap-6 mb-6 text-sm text-muted-foreground">
+          <span className="flex items-center gap-2">
+            <span className="inline-block w-1 h-4 rounded" style={{ background: '#007bff' }} />
+            Old Charts (PRE-PRiSM)
+          </span>
+          <span className="flex items-center gap-2">
+            <span className="inline-block w-1 h-4 rounded" style={{ background: '#28a745' }} />
+            New Charts (PRiSM PLUS / CiRCLE)
+          </span>
+        </div>
+
+        <form className="flex flex-wrap gap-3 items-center mb-6 relative" autoComplete="off" onSubmit={addSong}>
+          <div className="flex items-center gap-2">
+            <Label htmlFor="song-input">Song Name:</Label>
+          </div>
+          <div className="relative" style={{ minWidth: 250 }}>
+            <Input
+              id="song-input"
+              type="text"
+              value={songInput}
+              required
               onChange={e => { setSongInput(e.target.value); buildDropdown(e.target.value) }}
               placeholder="Song Name or Alias"
             />
             {dropdown.length > 0 && (
-              <div className="dropdown-menu show" style={{ maxHeight: 200, overflowY: 'auto', width: '100%' }}>
+              <div className="absolute top-full left-0 right-0 z-50 mt-1 max-h-48 overflow-y-auto rounded-lg border bg-popover text-popover-foreground shadow-md">
                 {dropdown.map((m, i) => (
-                  <button key={i} type="button" className="dropdown-item" onClick={() => { setSongInput(m.value); setDropdown([]) }}>
-                    {m.value}{m.type === 'fuzzy' ? <small className="text-muted"> ({m.sim}% match)</small> : null}
+                  <button
+                    key={i}
+                    type="button"
+                    className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground transition-colors"
+                    onClick={() => { setSongInput(m.value); setDropdown([]) }}
+                  >
+                    {m.value}
+                    {m.type === 'fuzzy' && <span className="text-muted-foreground text-xs ml-1">({m.sim}% match)</span>}
                   </button>
                 ))}
               </div>
             )}
           </div>
-          <div className="col-auto"><label className="col-form-label">Difficulty:</label></div>
-          <div className="col-auto">
-            <select className="form-select" value={difficulty} onChange={e => setDifficulty(e.target.value)}>
-              {['Basic', 'Advanced', 'Expert', 'Master', 'Re:Master'].map(d => <option key={d}>{d}</option>)}
-            </select>
-          </div>
-          <div className="col-auto"><label className="col-form-label">Achievement:</label></div>
-          <div className="col-auto">
-            <input type="number" className="form-control" step="0.0001" min="0" max="101" value={achievement} required onChange={e => setAchievement(e.target.value)} />
-          </div>
-          <div className="col-auto"><button type="submit" className="btn btn-primary">Add</button></div>
+          <Label>Difficulty:</Label>
+          <Select value={difficulty} onValueChange={setDifficulty}>
+            <SelectTrigger className="w-36">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                {['Basic', 'Advanced', 'Expert', 'Master', 'Re:Master'].map(d => (
+                  <SelectItem key={d} value={d}>{d}</SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+          <Label htmlFor="achievement-input">Achievement:</Label>
+          <Input
+            id="achievement-input"
+            type="number"
+            className="w-32"
+            step="0.0001"
+            min="0"
+            max="101"
+            value={achievement}
+            required
+            onChange={e => setAchievement(e.target.value)}
+          />
+          <Button type="submit">Add</Button>
         </form>
 
-        <div className="mb-3">
-          <small className="text-muted">
-            <i className="fas fa-info-circle" /> If you want to add an alias to a song, consider clicking Chart Database!
-          </small>
-        </div>
+        <p className="text-sm text-muted-foreground mb-6 flex items-center gap-1">
+          <Info className="size-4" />
+          If you want to add an alias to a song, consider clicking Chart Database!
+        </p>
 
-        <h2 className="mt-5">All Songs (Old + New) Grid View</h2>
-        <div ref={gridRef} className="table-responsive mb-4 wide-grid-container">
-          <table className="table table-bordered align-middle wide-grid-table" style={{ tableLayout: 'fixed' }}>
+        <h2 className="text-xl font-semibold mt-4 mb-3">All Songs (Old + New) Grid View</h2>
+        <div ref={gridRef} className="wide-grid-container mb-6">
+          <table className="wide-grid-table" style={{ tableLayout: 'fixed', borderCollapse: 'collapse' }}>
             <tbody>
               {Array.from({ length: 10 }, (_, row) => (
                 <tr key={row}>

@@ -1,6 +1,34 @@
 import { useState, useRef } from 'react'
 import { usePage, router, Link } from '@inertiajs/react'
 import MainLayout from '../layouts/MainLayout'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from '@/components/ui/table'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog'
+import { Download, FileUp, Tag, X, Info } from 'lucide-react'
 
 interface DbSong {
   id: number
@@ -94,6 +122,12 @@ function calcSimilarity(a: string, b: string): number {
   return Math.round((common / total) * 70 + (pos / minLen) * 20 + (sub / total) * 10)
 }
 
+function aliasStatusClass(type: string): string {
+  if (type === 'success') return 'border-green-500/50 bg-green-50 text-green-800 dark:bg-green-950/30 dark:text-green-400'
+  if (type === 'warning') return 'border-yellow-500/40 bg-yellow-50 text-yellow-800 dark:bg-yellow-950/30 dark:text-yellow-400'
+  return ''
+}
+
 function Autocomplete({ id, value, onChange, options, aliasMap, placeholder }: AutocompleteProps) {
   const [items, setItems] = useState<DropdownItem[]>([])
 
@@ -105,7 +139,6 @@ function Autocomplete({ id, value, onChange, options, aliasMap, placeholder }: A
     const add = (value: string, type: 'exact' | 'fuzzy', sim = 100) => {
       if (!seen.has(value)) { seen.add(value); matches.push({ value, type, sim }) }
     }
-
     if (aliasMap) {
       Object.keys(aliasMap).filter(a => a.toLowerCase().includes(v)).forEach(a => add(aliasMap[a], 'exact'))
       options.filter(n => n.toLowerCase().includes(v)).forEach(n => add(n, 'exact'))
@@ -129,14 +162,26 @@ function Autocomplete({ id, value, onChange, options, aliasMap, placeholder }: A
   }
 
   return (
-    <div className="position-relative">
-      <input id={id} type="text" className="form-control" value={value} placeholder={placeholder} autoComplete="off"
-        onChange={e => { onChange(e.target.value); build(e.target.value) }} />
+    <div className="relative">
+      <Input
+        id={id}
+        type="text"
+        value={value}
+        placeholder={placeholder}
+        autoComplete="off"
+        onChange={e => { onChange(e.target.value); build(e.target.value) }}
+      />
       {items.length > 0 && (
-        <div className="dropdown-menu show" style={{ maxHeight: 200, overflowY: 'auto', width: '100%' }}>
+        <div className="absolute top-full left-0 right-0 z-50 mt-1 max-h-48 overflow-y-auto rounded-lg border bg-popover text-popover-foreground shadow-md">
           {items.map((m, i) => (
-            <button key={i} type="button" className="dropdown-item" onClick={() => { onChange(m.value); setItems([]) }}>
-              {m.value}{m.type === 'fuzzy' ? <small className="text-muted"> ({m.sim}% match)</small> : null}
+            <button
+              key={i}
+              type="button"
+              className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground transition-colors"
+              onClick={() => { onChange(m.value); setItems([]) }}
+            >
+              {m.value}
+              {m.type === 'fuzzy' && <span className="text-muted-foreground text-xs ml-1">({m.sim}% match)</span>}
             </button>
           ))}
         </div>
@@ -146,9 +191,11 @@ function Autocomplete({ id, value, onChange, options, aliasMap, placeholder }: A
 }
 
 export default function ChartDatabase() {
-  const { songs, pagination, filterTitles, filterVersions, filterArtists, filterCatcodes, aliasToTitleMap, currentFilters } = usePage().props as unknown as ChartDatabasePageProps
+  const { songs, pagination, filterTitles, filterVersions, filterArtists, filterCatcodes, aliasToTitleMap, currentFilters } =
+    usePage().props as unknown as ChartDatabasePageProps
 
   const [filters, setFilters] = useState<Filters>(currentFilters)
+  const [modalOpen, setModalOpen] = useState(false)
   const [modalSong, setModalSong] = useState<DbSong | null>(null)
   const [aliases, setAliases] = useState<string[]>([])
   const [newAlias, setNewAlias] = useState('')
@@ -192,8 +239,7 @@ export default function ChartDatabase() {
     const res = await fetch(`/chart-database/get-aliases/${song.id}/`)
     const d = await res.json() as { status: string; aliases: string[] }
     setAliases(d.status === 'success' ? d.aliases : [])
-    const modal = new window.bootstrap.Modal(document.getElementById('aliasModal'))
-    modal.show()
+    setModalOpen(true)
   }
 
   async function addAlias() {
@@ -223,153 +269,208 @@ export default function ChartDatabase() {
 
   return (
     <MainLayout>
-      <div className="container-fluid my-4" style={{ maxWidth: '150vw' }}>
-        <h1 className="text-center mb-4">Maimai Chart Database</h1>
+      <div className="w-full px-4 py-6">
+        <h1 className="text-2xl font-bold text-center mb-6">Maimai Chart Database</h1>
 
-        <form className="row g-2 mb-4" autoComplete="off" onSubmit={handleFilter}>
-          <div className="col-md-2">
+        <form className="flex flex-wrap gap-2 mb-4" autoComplete="off" onSubmit={handleFilter}>
+          <div className="w-44">
             <Autocomplete id="filter_title" value={filters.title} onChange={setF('title')} options={filterTitles} aliasMap={aliasToTitleMap} placeholder="Song Name or Alias" />
           </div>
-          <div className="col-md-2">
+          <div className="w-36">
             <Autocomplete id="filter_version" value={filters.version} onChange={setF('version')} options={filterVersions} placeholder="Version" />
           </div>
-          <div className="col-md-2">
+          <div className="w-36">
             <Autocomplete id="filter_artist" value={filters.artist} onChange={setF('artist')} options={filterArtists} placeholder="Artist" />
           </div>
-          <div className="col-md-2">
-            <select className="form-select" value={filters.catcode} onChange={e => setF('catcode')(e.target.value)}>
-              <option value="">Catcode</option>
-              {filterCatcodes.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </div>
-          <div className="col-md-2">
-            <select className="form-select" value={filters.chartType} onChange={e => setF('chartType')(e.target.value)}>
-              <option value="">Chart Type</option>
-              <option value="STD">STD</option>
-              <option value="DX">DX</option>
-            </select>
-          </div>
-          <div className="col-md-2">
-            <select className="form-select" value={filters.difficulty} onChange={e => setF('difficulty')(e.target.value)}>
-              <option value="">Difficulty</option>
-              {['Basic', 'Advanced', 'Expert', 'Master', 'Re:Master'].map(d => <option key={d}>{d}</option>)}
-            </select>
-          </div>
-          <div className="col-md-12 mt-2">
-            <button type="submit" className="btn btn-primary">Filter</button>
-            <Link href="/chart-database/" className="btn btn-secondary ms-2">Reset</Link>
-            <a href="/chart-database/download/" className="btn btn-success ms-3"><i className="fas fa-download me-1" />Download Full Database (JSON)</a>
-            <Link href="/chart-database/alias-upload/" className="btn btn-info ms-3"><i className="fas fa-file-upload me-1" />Add Alias via File</Link>
+          <Select value={filters.catcode} onValueChange={setF('catcode')}>
+            <SelectTrigger className="w-36">
+              <SelectValue placeholder="Catcode" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectItem value="">All Catcodes</SelectItem>
+                {filterCatcodes.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+          <Select value={filters.chartType} onValueChange={setF('chartType')}>
+            <SelectTrigger className="w-32">
+              <SelectValue placeholder="Chart Type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectItem value="">All Types</SelectItem>
+                <SelectItem value="STD">STD</SelectItem>
+                <SelectItem value="DX">DX</SelectItem>
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+          <Select value={filters.difficulty} onValueChange={setF('difficulty')}>
+            <SelectTrigger className="w-36">
+              <SelectValue placeholder="Difficulty" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectItem value="">All Difficulties</SelectItem>
+                {['Basic', 'Advanced', 'Expert', 'Master', 'Re:Master'].map(d => (
+                  <SelectItem key={d} value={d}>{d}</SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+          <div className="flex gap-2 flex-wrap items-center">
+            <Button type="submit">Filter</Button>
+            <Link href="/chart-database/">
+              <Button type="button" variant="secondary">Reset</Button>
+            </Link>
+            <a href="/chart-database/download/">
+              <Button type="button" variant="outline">
+                <Download data-icon="inline-start" />
+                Download Full Database (JSON)
+              </Button>
+            </a>
+            <Link href="/chart-database/alias-upload/">
+              <Button type="button" variant="outline">
+                <FileUp data-icon="inline-start" />
+                Add Alias via File
+              </Button>
+            </Link>
           </div>
         </form>
 
-        <div className="mb-2 d-flex justify-content-between align-items-center">
+        <div className="flex items-center justify-between mb-3 text-sm">
           <div><strong>{pagination.totalCount}</strong> result{pagination.totalCount !== 1 ? 's' : ''} found.</div>
-          <small className="text-muted"><i className="fas fa-info-circle" /> Search by song name or aliases</small>
+          <span className="text-muted-foreground flex items-center gap-1">
+            <Info className="size-3.5" /> Search by song name or aliases
+          </span>
         </div>
 
-        <div className="table-responsive" style={{ overflowX: 'auto' }}>
-          <table className="table table-striped table-bordered align-middle w-100">
-            <thead className="table-dark">
-              <tr>
-                <th>#</th><th>Title</th><th>Title Kana</th><th>Artist</th><th>Catcode</th>
-                <th>Image</th><th>Release</th><th>Basic</th><th>Adv</th><th>Exp</th><th>Mas</th><th>Re:Mas</th>
-                <th>Sort</th><th>Version</th><th>Type</th><th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {songs.length === 0
-                ? <tr><td colSpan={16} className="text-center">No songs found.</td></tr>
-                : songs.map((s, i) => (
-                  <tr key={s.id}>
-                    <td>{pagination.startIndex + i}</td>
-                    <td>{s.title}</td><td>{s.title_kana}</td><td>{s.artist}</td><td>{s.catcode}</td>
-                    <td>
-                      {s.image_url
-                        ? <a href={s.image_url} target="_blank" rel="noreferrer"><img src={s.image_url} alt="" loading="lazy" style={{ height: 40, maxWidth: 60, borderRadius: 4 }} /></a>
-                        : '-'}
-                    </td>
-                    <td>{s.release}</td><td>{s.lev_bas}</td><td>{s.lev_adv}</td><td>{s.lev_exp}</td><td>{s.lev_mas}</td><td>{s.lev_remas}</td>
-                    <td>{s.sort}</td><td>{s.version}</td><td>{s.chart_type}</td>
-                    <td>
-                      <button type="button" className="btn btn-sm btn-primary" onClick={() => openModal(s)}>
-                        <i className="fas fa-tag" /> Aliases
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>#</TableHead>
+              <TableHead>Title</TableHead>
+              <TableHead>Title Kana</TableHead>
+              <TableHead>Artist</TableHead>
+              <TableHead>Catcode</TableHead>
+              <TableHead>Image</TableHead>
+              <TableHead>Release</TableHead>
+              <TableHead>Basic</TableHead>
+              <TableHead>Adv</TableHead>
+              <TableHead>Exp</TableHead>
+              <TableHead>Mas</TableHead>
+              <TableHead>Re:Mas</TableHead>
+              <TableHead>Sort</TableHead>
+              <TableHead>Version</TableHead>
+              <TableHead>Type</TableHead>
+              <TableHead>Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {songs.length === 0
+              ? <TableRow><TableCell colSpan={16} className="text-center text-muted-foreground">No songs found.</TableCell></TableRow>
+              : songs.map((s, i) => (
+                <TableRow key={s.id}>
+                  <TableCell>{pagination.startIndex + i}</TableCell>
+                  <TableCell>{s.title}</TableCell>
+                  <TableCell>{s.title_kana}</TableCell>
+                  <TableCell>{s.artist}</TableCell>
+                  <TableCell>{s.catcode}</TableCell>
+                  <TableCell>
+                    {s.image_url
+                      ? <a href={s.image_url} target="_blank" rel="noreferrer">
+                          <img src={s.image_url} alt="" loading="lazy" className="h-10 max-w-[60px] rounded" />
+                        </a>
+                      : '-'}
+                  </TableCell>
+                  <TableCell>{s.release}</TableCell>
+                  <TableCell>{s.lev_bas}</TableCell>
+                  <TableCell>{s.lev_adv}</TableCell>
+                  <TableCell>{s.lev_exp}</TableCell>
+                  <TableCell>{s.lev_mas}</TableCell>
+                  <TableCell>{s.lev_remas}</TableCell>
+                  <TableCell>{s.sort}</TableCell>
+                  <TableCell>{s.version}</TableCell>
+                  <TableCell>{s.chart_type}</TableCell>
+                  <TableCell>
+                    <Button size="sm" variant="outline" onClick={() => openModal(s)}>
+                      <Tag data-icon="inline-start" />
+                      Aliases
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+          </TableBody>
+        </Table>
+
+        <div className="flex items-center justify-center gap-1 mt-4">
+          {pagination.hasPrevious
+            ? <Link href={pageUrl(1)}><Button variant="outline" size="sm">« First</Button></Link>
+            : <Button variant="outline" size="sm" disabled>« First</Button>}
+          {pagination.hasPrevious
+            ? <Link href={pageUrl(pagination.previousPage)}><Button variant="outline" size="sm">‹ Prev</Button></Link>
+            : <Button variant="outline" size="sm" disabled>‹ Prev</Button>}
+          <Button variant="ghost" size="sm" disabled>
+            Page {pagination.page} of {pagination.numPages}
+          </Button>
+          {pagination.hasNext
+            ? <Link href={pageUrl(pagination.nextPage)}><Button variant="outline" size="sm">Next ›</Button></Link>
+            : <Button variant="outline" size="sm" disabled>Next ›</Button>}
+          {pagination.hasNext
+            ? <Link href={pageUrl(pagination.numPages)}><Button variant="outline" size="sm">Last »</Button></Link>
+            : <Button variant="outline" size="sm" disabled>Last »</Button>}
         </div>
 
-        <nav>
-          <ul className="pagination justify-content-center">
-            <li className={`page-item${!pagination.hasPrevious ? ' disabled' : ''}`}>
-              {pagination.hasPrevious
-                ? <Link className="page-link" href={pageUrl(1)}>&laquo; First</Link>
-                : <span className="page-link">&laquo; First</span>}
-            </li>
-            <li className={`page-item${!pagination.hasPrevious ? ' disabled' : ''}`}>
-              {pagination.hasPrevious
-                ? <Link className="page-link" href={pageUrl(pagination.previousPage)}>&lsaquo; Prev</Link>
-                : <span className="page-link">&lsaquo; Prev</span>}
-            </li>
-            <li className="page-item disabled">
-              <span className="page-link">Page {pagination.page} of {pagination.numPages}</span>
-            </li>
-            <li className={`page-item${!pagination.hasNext ? ' disabled' : ''}`}>
-              {pagination.hasNext
-                ? <Link className="page-link" href={pageUrl(pagination.nextPage)}>Next &rsaquo;</Link>
-                : <span className="page-link">Next &rsaquo;</span>}
-            </li>
-            <li className={`page-item${!pagination.hasNext ? ' disabled' : ''}`}>
-              {pagination.hasNext
-                ? <Link className="page-link" href={pageUrl(pagination.numPages)}>Last &raquo;</Link>
-                : <span className="page-link">Last &raquo;</span>}
-            </li>
-          </ul>
-        </nav>
+        <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Manage Aliases</DialogTitle>
+            </DialogHeader>
+            <div className="flex flex-col gap-4">
+              <div className="text-sm"><strong>Song:</strong> {modalSong?.title}</div>
 
-        {/* Alias Modal */}
-        <div className="modal fade" id="aliasModal" tabIndex={-1}>
-          <div className="modal-dialog">
-            <div className="modal-content">
-              <div className="modal-header">
-                <h5 className="modal-title">Manage Aliases</h5>
-                <button type="button" className="btn-close" data-bs-dismiss="modal" />
-              </div>
-              <div className="modal-body">
-                <div className="mb-3"><strong>Song:</strong> {modalSong?.title}</div>
-                <div className="mb-3">
-                  <label className="form-label">Add New Alias:</label>
-                  <div className="input-group">
-                    <input type="text" className="form-control" value={newAlias} placeholder="Enter alias name"
-                      onChange={e => setNewAlias(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && addAlias()} />
-                    <button className="btn btn-success" type="button" onClick={addAlias}>Add</button>
-                  </div>
+              <div className="flex flex-col gap-1.5">
+                <Label>Add New Alias:</Label>
+                <div className="flex gap-2">
+                  <Input
+                    type="text"
+                    value={newAlias}
+                    placeholder="Enter alias name"
+                    onChange={e => setNewAlias(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && addAlias()}
+                  />
+                  <Button type="button" onClick={addAlias}>Add</Button>
                 </div>
-                <div className="mb-3">
-                  <label className="form-label">Current Aliases:</label>
-                  <div className="border p-2 rounded" style={{ minHeight: 100, maxHeight: 200, overflowY: 'auto' }}>
-                    {aliases.length === 0
-                      ? <em className="text-muted">No aliases added yet.</em>
-                      : aliases.map((a, i) => (
-                        <div key={i} className="d-flex justify-content-between align-items-center mb-2 p-2 bg-light rounded">
-                          <span>{a}</span>
-                          <button className="btn btn-sm btn-danger" onClick={() => removeAlias(a)}><i className="fas fa-times" /></button>
-                        </div>
-                      ))}
-                  </div>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <Label>Current Aliases:</Label>
+                <div className="border rounded-lg min-h-24 max-h-48 overflow-y-auto p-2 flex flex-col gap-1.5">
+                  {aliases.length === 0
+                    ? <em className="text-muted-foreground text-sm">No aliases added yet.</em>
+                    : aliases.map((a, i) => (
+                      <div key={i} className="flex items-center justify-between rounded-md bg-muted px-3 py-1.5 text-sm">
+                        <span>{a}</span>
+                        <Button size="icon-xs" variant="destructive" onClick={() => removeAlias(a)}>
+                          <X />
+                        </Button>
+                      </div>
+                    ))}
                 </div>
-                {aliasStatus.show && <div className={`alert alert-${aliasStatus.type}`}>{aliasStatus.msg}</div>}
               </div>
-              <div className="modal-footer">
-                <button type="button" className="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-              </div>
+
+              {aliasStatus.show && (
+                <Alert
+                  variant={aliasStatus.type === 'danger' ? 'destructive' : 'default'}
+                  className={aliasStatusClass(aliasStatus.type)}
+                >
+                  <AlertDescription>{aliasStatus.msg}</AlertDescription>
+                </Alert>
+              )}
             </div>
-          </div>
-        </div>
+            <DialogFooter showCloseButton />
+          </DialogContent>
+        </Dialog>
       </div>
     </MainLayout>
   )
