@@ -1,15 +1,22 @@
-import { useEffect, useState } from 'react'
-import { usePage } from '@inertiajs/react'
+import { router, usePage } from '@inertiajs/react'
 import MainLayout from '../layouts/MainLayout'
 
-export default function AliasUpload() {
-  const { messages } = usePage().props
-  const [csrf, setCsrf] = useState('')
+interface FlashMessage {
+  type: string
+  text: string
+}
 
-  useEffect(() => {
-    const c = document.cookie.split(';').find(s => s.trim().startsWith('csrftoken='))
-    if (c) setCsrf(decodeURIComponent(c.trim().slice('csrftoken='.length)))
-  }, [])
+interface AliasUploadPageProps {
+  messages?: FlashMessage[]
+}
+
+export default function AliasUpload() {
+  const { messages } = usePage().props as AliasUploadPageProps
+
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    router.post('/chart-database/alias-upload/', new FormData(e.currentTarget))
+  }
 
   return (
     <MainLayout>
@@ -68,8 +75,7 @@ export default function AliasUpload() {
                     </div>
                   ))}
 
-                  <form method="post" encType="multipart/form-data" action="/chart-database/alias-upload/" className="mb-3">
-                    <input type="hidden" name="csrfmiddlewaretoken" value={csrf} readOnly />
+                  <form onSubmit={handleSubmit} encType="multipart/form-data" className="mb-3">
                     <div className="mb-3">
                       <label htmlFor="alias_file" className="form-label">
                         <i className="fas fa-file-code me-2" />Select JSON File:

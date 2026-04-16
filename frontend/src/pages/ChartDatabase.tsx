@@ -2,16 +2,86 @@ import { useState, useRef } from 'react'
 import { usePage, router, Link } from '@inertiajs/react'
 import MainLayout from '../layouts/MainLayout'
 
-function getCsrf() {
+interface DbSong {
+  id: number
+  title: string
+  title_kana: string
+  artist: string
+  catcode: string
+  image_url: string
+  release: string
+  lev_bas: string
+  lev_adv: string
+  lev_exp: string
+  lev_mas: string
+  lev_remas: string
+  sort: string
+  version: string
+  chart_type: string
+}
+
+interface Pagination {
+  page: number
+  numPages: number
+  hasPrevious: boolean
+  hasNext: boolean
+  previousPage: number
+  nextPage: number
+  totalCount: number
+  startIndex: number
+}
+
+interface Filters {
+  title: string
+  version: string
+  artist: string
+  catcode: string
+  chartType: string
+  difficulty: string
+}
+
+interface ChartDatabasePageProps {
+  songs: DbSong[]
+  pagination: Pagination
+  filterTitles: string[]
+  filterVersions: string[]
+  filterArtists: string[]
+  filterCatcodes: string[]
+  aliasToTitleMap: Record<string, string>
+  currentFilters: Filters
+}
+
+interface AutocompleteProps {
+  id: string
+  value: string
+  onChange: (val: string) => void
+  options: string[]
+  aliasMap?: Record<string, string>
+  placeholder: string
+}
+
+interface DropdownItem {
+  value: string
+  type: 'exact' | 'fuzzy'
+  sim: number
+}
+
+interface AliasStatus {
+  msg: string
+  type: string
+  show: boolean
+}
+
+function getCsrf(): string {
   const c = document.cookie.split(';').find(s => s.trim().startsWith('csrftoken='))
   return c ? decodeURIComponent(c.trim().slice('csrftoken='.length)) : ''
 }
 
-function calcSimilarity(a, b) {
+function calcSimilarity(a: string, b: string): number {
   const s1 = a.toLowerCase(), s2 = b.toLowerCase()
   if (s1 === s2) return 100
   if (!s1.length || !s2.length) return 0
-  const c1 = {}, c2 = {}
+  const c1: Record<string, number> = {}, c2: Record<string, number> = {}
   for (const ch of s1) c1[ch] = (c1[ch] || 0) + 1
   for (const ch of s2) c2[ch] = (c2[ch] || 0) + 1
   let common = 0
@@ -24,25 +94,35 @@ function calcSimilarity(a, b) {
   return Math.round((common / total) * 70 + (pos / minLen) * 20 + (sub / total) * 10)
 }
 
-function Autocomplete({ id, value, onChange, options, aliasMap, placeholder }) {
-  const [items, setItems] = useState([])
+function Autocomplete({ id, value, onChange, options, aliasMap, placeholder }: AutocompleteProps) {
+  const [items, setItems] = useState<DropdownItem[]>([])
 
-  function build(val) {
+  function build(val: string) {
     if (!val) { setItems([]); return }
     const v = val.toLowerCase()
-    const matches = []; const seen = new Set()
-    const add = (value, type, sim = 100) => { if (!seen.has(value)) { seen.add(value); matches.push({ value, type, sim }) } }
+    const matches: DropdownItem[] = []
+    const seen = new Set<string>()
+    const add = (value: string, type: 'exact' | 'fuzzy', sim = 100) => {
+      if (!seen.has(value)) { seen.add(value); matches.push({ value, type, sim }) }
+    }
 
     if (aliasMap) {
       Object.keys(aliasMap).filter(a => a.toLowerCase().includes(v)).forEach(a => add(aliasMap[a], 'exact'))
       options.filter(n => n.toLowerCase().includes(v)).forEach(n => add(n, 'exact'))
       if (matches.length < 5) {
-        Object.keys(aliasMap).forEach(a => { const t = aliasMap[a]; if (!seen.has(t)) { const s = calcSimilarity(v, a.toLowerCase()); if (s >= 30) { seen.add(t); matches.push({ value: t, type: 'fuzzy', sim: s }) } } })
-        options.forEach(n => { if (!seen.has(n)) { const s = calcSimilarity(v, n.toLowerCase()); if (s >= 30) { seen.add(n); matches.push({ value: n, type: 'fuzzy', sim: s }) } } })
+        Object.keys(aliasMap).forEach(a => {
+          const t = aliasMap[a]
+          if (!seen.has(t)) { const s = calcSimilarity(v, a.toLowerCase()); if (s >= 30) { seen.add(t); matches.push({ value: t, type: 'fuzzy', sim: s }) } }
+        })
+        options.forEach(n => {
+          if (!seen.has(n)) { const s = calcSimilarity(v, n.toLowerCase()); if (s >= 30) { seen.add(n); matches.push({ value: n, type: 'fuzzy', sim: s }) } }
+        })
       }
     } else {
       options.filter(o => o.toLowerCase().includes(v)).forEach(o => add(o, 'exact'))
-      if (matches.length < 5) options.forEach(o => { if (!seen.has(o)) { const s = calcSimilarity(v, o.toLowerCase()); if (s >= 30) { seen.add(o); matches.push({ value: o, type: 'fuzzy', sim: s }) } } })
+      if (matches.length < 5) options.forEach(o => {
+        if (!seen.has(o)) { const s = calcSimilarity(v, o.toLowerCase()); if (s >= 30) { seen.add(o); matches.push({ value: o, type: 'fuzzy', sim: s }) } }
+      })
     }
     matches.sort((a, b) => { if (a.type !== b.type) return a.type === 'exact' ? -1 : 1; return b.sim - a.sim })
     setItems(matches.slice(0, 10))
@@ -66,20 +146,20 @@ function Autocomplete({ id, value, onChange, options, aliasMap, placeholder }) {
 }
 
 export default function ChartDatabase() {
-  const { songs, pagination, filterTitles, filterVersions, filterArtists, filterCatcodes, aliasToTitleMap, currentFilters } = usePage().props
+  const { songs, pagination, filterTitles, filterVersions, filterArtists, filterCatcodes, aliasToTitleMap, currentFilters } = usePage().props as unknown as ChartDatabasePageProps
 
-  const [filters, setFilters] = useState(currentFilters)
-  const [modalSong, setModalSong] = useState(null)
-  const [aliases, setAliases] = useState([])
+  const [filters, setFilters] = useState<Filters>(currentFilters)
+  const [modalSong, setModalSong] = useState<DbSong | null>(null)
+  const [aliases, setAliases] = useState<string[]>([])
   const [newAlias, setNewAlias] = useState('')
-  const [aliasStatus, setAliasStatus] = useState({ msg: '', type: 'info', show: false })
-  const statusTimer = useRef(null)
+  const [aliasStatus, setAliasStatus] = useState<AliasStatus>({ msg: '', type: 'info', show: false })
+  const statusTimer = useRef<number>(0)
 
-  function setF(key) { return val => setFilters(f => ({ ...f, [key]: val })) }
+  function setF(key: keyof Filters) { return (val: string) => setFilters(f => ({ ...f, [key]: val })) }
 
-  function handleFilter(e) {
+  function handleFilter(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    const params = {}
+    const params: Record<string, string> = {}
     if (filters.title) params.title = filters.title
     if (filters.version) params.version = filters.version
     if (filters.artist) params.artist = filters.artist
@@ -89,7 +169,7 @@ export default function ChartDatabase() {
     router.get('/chart-database/', params, { preserveState: false })
   }
 
-  function pageUrl(p) {
+  function pageUrl(p: number): string {
     const params = new URLSearchParams()
     if (currentFilters.title) params.set('title', currentFilters.title)
     if (currentFilters.version) params.set('version', currentFilters.version)
@@ -97,20 +177,20 @@ export default function ChartDatabase() {
     if (currentFilters.catcode) params.set('catcode', currentFilters.catcode)
     if (currentFilters.chartType) params.set('chart_type', currentFilters.chartType)
     if (currentFilters.difficulty) params.set('difficulty', currentFilters.difficulty)
-    params.set('page', p)
+    params.set('page', String(p))
     return `/chart-database/?${params.toString()}`
   }
 
-  function showAliasMsg(msg, type, ms = 3000) {
+  function showAliasMsg(msg: string, type: string, ms = 3000) {
     clearTimeout(statusTimer.current)
     setAliasStatus({ msg, type, show: true })
-    if (ms > 0) statusTimer.current = setTimeout(() => setAliasStatus(s => ({ ...s, show: false })), ms)
+    if (ms > 0) statusTimer.current = window.setTimeout(() => setAliasStatus(s => ({ ...s, show: false })), ms)
   }
 
-  async function openModal(song) {
-    setModalSong(song); setNewAlias(''); setAliasStatus({ show: false })
+  async function openModal(song: DbSong) {
+    setModalSong(song); setNewAlias(''); setAliasStatus({ msg: '', type: 'info', show: false })
     const res = await fetch(`/chart-database/get-aliases/${song.id}/`)
-    const d = await res.json()
+    const d = await res.json() as { status: string; aliases: string[] }
     setAliases(d.status === 'success' ? d.aliases : [])
     const modal = new window.bootstrap.Modal(document.getElementById('aliasModal'))
     modal.show()
@@ -119,16 +199,24 @@ export default function ChartDatabase() {
   async function addAlias() {
     if (!newAlias.trim()) { showAliasMsg('Enter an alias name', 'warning'); return }
     showAliasMsg('Adding...', 'info', 0)
-    const res = await fetch('/chart-database/add-alias/', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() }, body: JSON.stringify({ song_id: modalSong.id, alias: newAlias.trim() }) })
-    const d = await res.json()
+    const res = await fetch('/chart-database/add-alias/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+      body: JSON.stringify({ song_id: modalSong!.id, alias: newAlias.trim() }),
+    })
+    const d = await res.json() as { status: string; aliases: string[]; message: string }
     if (d.status === 'success') { setAliases(d.aliases); setNewAlias(''); showAliasMsg(d.message, 'success') }
     else showAliasMsg(d.message, 'danger', 0)
   }
 
-  async function removeAlias(alias) {
+  async function removeAlias(alias: string) {
     showAliasMsg('Removing...', 'info', 0)
-    const res = await fetch('/chart-database/remove-alias/', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() }, body: JSON.stringify({ song_id: modalSong.id, alias }) })
-    const d = await res.json()
+    const res = await fetch('/chart-database/remove-alias/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+      body: JSON.stringify({ song_id: modalSong!.id, alias }),
+    })
+    const d = await res.json() as { status: string; aliases: string[]; message: string }
     if (d.status === 'success') { setAliases(d.aliases); showAliasMsg(d.message, 'success') }
     else showAliasMsg(d.message, 'danger', 0)
   }
@@ -164,7 +252,7 @@ export default function ChartDatabase() {
           <div className="col-md-2">
             <select className="form-select" value={filters.difficulty} onChange={e => setF('difficulty')(e.target.value)}>
               <option value="">Difficulty</option>
-              {['Basic','Advanced','Expert','Master','Re:Master'].map(d => <option key={d}>{d}</option>)}
+              {['Basic', 'Advanced', 'Expert', 'Master', 'Re:Master'].map(d => <option key={d}>{d}</option>)}
             </select>
           </div>
           <div className="col-md-12 mt-2">
@@ -243,7 +331,7 @@ export default function ChartDatabase() {
         </nav>
 
         {/* Alias Modal */}
-        <div className="modal fade" id="aliasModal" tabIndex="-1">
+        <div className="modal fade" id="aliasModal" tabIndex={-1}>
           <div className="modal-dialog">
             <div className="modal-content">
               <div className="modal-header">

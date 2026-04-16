@@ -1,6 +1,7 @@
 import { Link } from '@inertiajs/react'
+import React from 'react'
 
-export default function MainLayout({ children }) {
+export default function MainLayout({ children }: { children: React.ReactNode }) {
   return (
     <div>
       <div className="container" style={{ maxWidth: 800, marginTop: 24, marginBottom: 0, background: 'none', boxShadow: 'none', padding: '16px 24px' }}>

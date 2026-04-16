@@ -1,15 +1,17 @@
-import { useEffect, useState } from 'react'
-import { usePage } from '@inertiajs/react'
+import { router, usePage } from '@inertiajs/react'
 import MainLayout from '../layouts/MainLayout'
 
-export default function DatabaseUpload() {
-  const { message } = usePage().props
-  const [csrf, setCsrf] = useState('')
+interface DatabaseUploadPageProps {
+  message?: string
+}
 
-  useEffect(() => {
-    const c = document.cookie.split(';').find(s => s.trim().startsWith('csrftoken='))
-    if (c) setCsrf(decodeURIComponent(c.trim().slice('csrftoken='.length)))
-  }, [])
+export default function DatabaseUpload() {
+  const { message } = usePage().props as DatabaseUploadPageProps
+
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    router.post('/databaseUpload/', new FormData(e.currentTarget))
+  }
 
   return (
     <MainLayout>
@@ -18,8 +20,7 @@ export default function DatabaseUpload() {
         {message && (
           <p className={message.startsWith('Error') ? 'text-danger' : 'text-success'}>{message}</p>
         )}
-        <form method="post" encType="multipart/form-data" action="/databaseUpload/">
-          <input type="hidden" name="csrfmiddlewaretoken" value={csrf} readOnly />
+        <form onSubmit={handleSubmit} encType="multipart/form-data">
           <div className="mb-3">
             <input type="file" className="form-control" name="json_file" accept=".json" required />
           </div>
