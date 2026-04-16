@@ -348,7 +348,7 @@
             <td>
               {% if song.image_url %}
                 <a href="{{ song.image_url }}" target="_blank">
-                  <img src="{{ song.image_url }}" alt="Image" style="height:40px; max-width:60px; border-radius:4px;">
+                  <img src="{{ song.image_url }}" alt="Image" loading="lazy" decoding="async" style="height:40px; max-width:60px; border-radius:4px;">
                 </a>
               {% else %}
                 -

@@ -516,7 +516,7 @@
             }
             
             saveB50Data(b50Data);
-            updateDisplay();
+            scheduleUpdateDisplay();
             
             // Reset form
             event.target.form.reset();
@@ -646,6 +646,17 @@
         updateTableViews(b50Data);
       }
 
+      // Coalesced scheduler for updateDisplay to avoid repeated synchronous layout work
+      let _updateDisplayScheduled = false;
+      function scheduleUpdateDisplay() {
+        if (_updateDisplayScheduled) return;
+        _updateDisplayScheduled = true;
+        requestAnimationFrame(() => {
+          _updateDisplayScheduled = false;
+          updateDisplay();
+        });
+      }
+
       function updateGridDisplay(b50Data) {
         // Use the EXACT data provided (already sorted and selected by backend)
         // Do NOT re-sort or re-select here to maintain consistency with table
@@ -660,46 +671,40 @@
           newSongs.push(null);
         }
         
-        // Update grid cells
+        // Batch DOM writes: build HTML for all rows then set once
         const gridContainer = document.getElementById('b50GridContainer');
         const table = gridContainer.querySelector('table tbody');
-        
-        // Clear existing content
-        table.innerHTML = '';
-        
-        // Create 10 rows of 5 columns
+
+        // Build HTML string for the full grid to avoid repeated reflows
+        let rowsHTML = '';
         for (let row = 0; row < 10; row++) {
-          const tr = document.createElement('tr');
+          rowsHTML += '<tr>';
           for (let col = 0; col < 5; col++) {
-            const td = document.createElement('td');
             let song = null;
-            
-            // Determine which song to display based on row position
+
             if (row < 7) {
-              // Rows 0-6: Old charts (35 positions)
               const oldSongIndex = row * 5 + col;
               song = oldSongs[oldSongIndex];
             } else {
-              // Rows 7-9: New charts (15 positions) 
               const newSongIndex = (row - 7) * 5 + col;
               song = newSongs[newSongIndex];
             }
-            
-            td.className = 'song-grid-cell' + (row === 7 ? ' border-divider-row' : '');
-            
+
+            const baseClass = 'song-grid-cell' + (row === 7 ? ' border-divider-row' : '');
+
             if (song) {
               const diffClass = getDifficultyClass(song.difficulty_type);
               const chartTypeClass = isNewChart(song) ? 'new-chart' : 'old-chart';
-              td.className += ` ${diffClass} ${chartTypeClass}`;
-              td.innerHTML = createSongCellHTML(song);
+              rowsHTML += '<td class="' + baseClass + ' ' + diffClass + ' ' + chartTypeClass + '">' + createSongCellHTML(song) + '</td>';
             } else {
-              td.innerHTML = '<div class="song-grid-cell-inner"></div>';
+              rowsHTML += '<td class="' + baseClass + '"><div class="song-grid-cell-inner"></div></td>';
             }
-            
-            tr.appendChild(td);
           }
-          table.appendChild(tr);
+          rowsHTML += '</tr>';
         }
+
+        // Replace tbody content in one operation
+        table.innerHTML = rowsHTML;
       }
 
       // Function to update table views for old and new songs
@@ -745,30 +750,27 @@
         
         if (!tbody) return;
         
-        tbody.innerHTML = '';
-        
         if (songs.length === 0) {
-          const row = document.createElement('tr');
-          row.innerHTML = `<td colspan="7" class="text-center">No ${tableType} songs found.</td>`;
-          tbody.appendChild(row);
-        } else {
-          songs.forEach((song, index) => {
-            const row = document.createElement('tr');
-            const chartTypeClass = isNewChart(song) ? 'new-chart-row' : 'old-chart-row';
-            row.className = chartTypeClass;
-            
-            row.innerHTML = `
-              <td>${index + 1}</td>
-              <td>${song.song_name}</td>
-              <td>${song.difficulty_type}</td>
-              <td>${song.rank}</td>
-              <td>${parseFloat(song.achievement).toFixed(4)}%</td>
-              <td>${parseFloat(song.chart_difficulty).toFixed(1)}</td>
-              <td>${song.calculated_rating}</td>
-            `;
-            tbody.appendChild(row);
-          });
+          tbody.innerHTML = '<tr><td colspan="7" class="text-center">No ' + tableType + ' songs found.</td></tr>';
+          return;
         }
+
+        // Build rows HTML once and set innerHTML in one operation
+        let rowsHTML = '';
+        songs.forEach((song, index) => {
+          const chartTypeClass = isNewChart(song) ? 'new-chart-row' : 'old-chart-row';
+          rowsHTML += '<tr class="' + chartTypeClass + '">';
+          rowsHTML += '<td>' + (index + 1) + '</td>';
+          rowsHTML += '<td>' + song.song_name + '</td>';
+          rowsHTML += '<td>' + song.difficulty_type + '</td>';
+          rowsHTML += '<td>' + song.rank + '</td>';
+          rowsHTML += '<td>' + (parseFloat(song.achievement).toFixed(4)) + '%</td>';
+          rowsHTML += '<td>' + (parseFloat(song.chart_difficulty).toFixed(1)) + '</td>';
+          rowsHTML += '<td>' + song.calculated_rating + '</td>';
+          rowsHTML += '</tr>';
+        });
+
+        tbody.innerHTML = rowsHTML;
       }
 
       function getDifficultyClass(difficulty) {
@@ -792,7 +794,7 @@
             <span class="song-title-oneline ${chartTypeClass}">${song.song_name}</span>
             ${songInfo.image_url ? `
               <a href="${songInfo.image_url}" target="_blank" class="song-cell-image">
-                <img src="${songInfo.image_url}" alt="Image" loading="lazy">
+                <img src="${songInfo.image_url}" alt="Image" loading="lazy" decoding="async">
               </a>
             ` : ''}
             <div class="song-cell-bottom-left">
@@ -823,7 +825,7 @@
       // Initialize display on page load
       document.addEventListener('DOMContentLoaded', function() {
         // Just update display - it will handle recategorization internally
-        updateDisplay();
+        scheduleUpdateDisplay();
       });
     </script>
 
@@ -857,7 +859,7 @@
             
             // Save to localStorage
             saveB50Data(recategorizedData);
-            updateDisplay();
+            scheduleUpdateDisplay();
             
             const finalOldCount = recategorizedData.old_songs.length;
             const finalNewCount = recategorizedData.new_songs.length;
@@ -918,9 +920,9 @@
             statusDiv.textContent = data.message;
             
             // Store the B35+15 data in localStorage and update grid display
-            if (data.b35_15_data) {
+              if (data.b35_15_data) {
               localStorage.setItem('maimai_b50_data', JSON.stringify(data.b35_15_data));
-              updateDisplay();
+              scheduleUpdateDisplay();
               
               // Also update tables with ALL scores (not just B35+15)
               if (data.data) {
@@ -1011,7 +1013,7 @@
 
         // Clear localStorage
         saveB50Data({ old_songs: [], new_songs: [] });
-        updateDisplay();
+        scheduleUpdateDisplay();
 
         statusDiv.className = 'alert alert-success';
         statusDiv.textContent = 'B50 data cleared successfully!';
@@ -1210,7 +1212,7 @@
                       {% with song_obj=maimai_songs_dict|get_item:song.song_name %}
                         {% if song_obj and song_obj.image_url %}
                           <a href="{{ song_obj.image_url }}" target="_blank" class="song-cell-image">
-                            <img src="{{ song_obj.image_url }}" alt="Image">
+                            <img src="{{ song_obj.image_url }}" alt="Image" loading="lazy" decoding="async">
                           </a>
                         {% endif %}
                       {% endwith %}
