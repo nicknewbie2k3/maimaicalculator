@@ -63,6 +63,7 @@ TEMPLATES = [
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
+                "django.template.context_processors.debug",
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
@@ -138,13 +139,15 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 ALLOWED_HOSTS = ['nicknewbie2k3.pythonanywhere.com', 'adxcalculator.vercel.app', 'localhost', '127.0.0.1']
 
-INERTIA_LAYOUT = 'inertia.html'
+INTERNAL_IPS = ['127.0.0.1', '::1']
+
+INERTIA_LAYOUT = 'base.html'
 
 DJANGO_VITE = {
     "default": {
         "dev_mode": DEBUG,
         "dev_server_port": 5173,
-        "assets_path": BASE_DIR / "main" / "static" / "dist",
+        "manifest_path": BASE_DIR / "main" / "static" / "dist" / ".vite" / "manifest.json",
         "static_url_prefix": "dist",
     }
 }
