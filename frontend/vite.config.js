@@ -17,7 +17,7 @@ export default defineConfig({
   build: {
     outDir: '../main/static/dist',
     emptyOutDir: true,
-    manifest: true,
+    manifest: 'manifest.json',
     rollupOptions: {
       input: 'src/main.tsx',
     },
