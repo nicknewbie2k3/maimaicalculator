@@ -133,4 +133,4 @@ STATICFILES_STORAGE = "whitenoise.storage.CompressedStaticFilesStorage"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-ALLOWED_HOSTS = ['nicknewbie2k3.pythonanywhere.com', 'maimaicalculator.vercel.app/', 'localhost', '127.0.0.1']
+ALLOWED_HOSTS = ['nicknewbie2k3.pythonanywhere.com', 'maimaicalculator.vercel.app', 'localhost', '127.0.0.1']

@@ -79,3 +79,13 @@ Desktop.ini
 
 # Sphinx build
 docs/_build/
+
+# Additional common ignores
+node_modules/
+celerybeat-schedule
+.python-version
+*.sublime-workspace
+*.sublime-project
+.ipynb_checkpoints
+nosetests.xml
+coverage.xml
