@@ -170,8 +170,12 @@ function SongCell({ song, songDict }: SongCellProps) {
     <div className={`song-card ${diffClass(song.difficulty_type)}`}>
       <div className="song-card-art" style={info.image_url ? { backgroundImage: `url(${info.image_url})` } : undefined}>
         {chartTag && <span className={`song-tag ${chartTagClass}`}>{chartTag}</span>}
-        {clearIconSrc && <img src={clearIconSrc} className="song-clear-icon" alt={String(song.clear_type)} />}
-        <span className="song-card-rating">{song.calculated_rating}</span>
+        <div className="song-card-rating-wrap">
+          {clearIconSrc && (
+            <img src={clearIconSrc} className="song-clear-inline" alt={String(song.clear_type)} />
+          )}
+          <div className="song-card-rating">{song.calculated_rating}</div>
+        </div>
       </div>
       <div className="song-card-info">
         <div className="song-card-title" title={song.song_name}>{displayTitle}</div>

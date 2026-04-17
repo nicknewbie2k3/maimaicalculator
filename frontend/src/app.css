@@ -196,18 +196,25 @@
   pointer-events: none;
 }
 
-.song-card-rating {
+.song-card-rating-wrap {
   position: absolute;
   right: 6px; bottom: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 10;
+}
+
+.song-card-rating {
   font-weight: 900;
   font-size: 1rem;
   color: #111;
   background: linear-gradient(135deg, #fff 0%, #e5e7eb 100%);
-  padding: 3px 8px;
-  border-radius: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
   box-shadow: 0 2px 6px rgba(0,0,0,0.45);
   letter-spacing: 0.2px;
-  z-index: 10;
+  display: inline-block;
 }
 
 .song-tag {
@@ -544,17 +551,15 @@
 }
 
 /* Clear-type icon */
-.song-clear-icon {
-  position: absolute;
-  top: 6px;
-  right: 6px;
+/* Inline clear icon placed next to the rating number */
+.song-clear-inline {
   width: 28px;
   height: 28px;
   object-fit: contain;
-  z-index: 30;
   filter: drop-shadow(0 2px 6px rgba(0,0,0,0.45));
   border-radius: 6px;
   background: rgba(255,255,255,0.02);
+  display: inline-block;
 }
 
 /* Table cell clear icon */
@@ -570,11 +575,9 @@
 
 /* Ensure icons remain visible on narrow/mobile viewports */
 @media (max-width: 640px) {
-  .song-clear-icon {
+  .song-clear-inline {
     width: 36px;
     height: 36px;
-    top: 8px;
-    right: 8px;
   }
   .table-clear-icon {
     width: 40px;
