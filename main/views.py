@@ -289,6 +289,22 @@ def calculator_list(request):
             coefficient = coefficients.get(rank, Decimal('0'))
             calculated_rating = (chart_difficulty * coefficient * achievement_for_calc / 100).to_integral_value(rounding=ROUND_DOWN)
 
+            # Optional: accept clear type from POST (numeric 3/4/5/6 or string 'AP'/'AP+')
+            raw_clear_post = request.POST.get('clear_type') or request.POST.get('clearType') or request.POST.get('clear')
+            try:
+                raw_clear_int = int(raw_clear_post) if raw_clear_post is not None else None
+            except Exception:
+                raw_clear_int = None
+
+            # Apply +1 bonus for AP/AP+ if indicated
+            try:
+                rating_int = int(calculated_rating)
+            except Exception:
+                rating_int = int(calculated_rating) if calculated_rating else 0
+
+            if raw_clear_int in (5, 6) or (isinstance(raw_clear_post, str) and raw_clear_post.strip().upper() in ('AP', 'AP+')):
+                rating_int += 1
+
             # Return song data as JSON for localStorage handling
             song_data = {
                 'song_name': song_name,
@@ -296,7 +312,7 @@ def calculator_list(request):
                 'rank': rank,
                 'achievement': float(achievement),
                 'chart_difficulty': float(chart_difficulty),
-                'calculated_rating': int(calculated_rating),
+                'calculated_rating': rating_int,
                 'version': version
             }
             
@@ -468,7 +484,94 @@ def load_b50_data(request):
             if 'old_songs' not in data or 'new_songs' not in data:
                 return JsonResponse({'status': 'error', 'message': 'Invalid file format. Missing old_songs or new_songs data.'})
             
-            # Return the data for frontend localStorage handling
+            # Apply AP/AP+ bonus to any imported song entries where applicable.
+            def _compute_rating_from_fields(song):
+                try:
+                    # Use chart_difficulty, achievement and rank to recompute rating
+                    ach = Decimal(str(song.get('achievement', 0)))
+                except Exception:
+                    try:
+                        ach = Decimal(str(float(song.get('achievement', 0))))
+                    except Exception:
+                        ach = Decimal('0')
+
+                # Cap achievement for calculation
+                achievement_for_calc = ach
+                if achievement_for_calc > Decimal('100.5'):
+                    achievement_for_calc = Decimal('100.5')
+
+                try:
+                    chart_d = Decimal(str(song.get('chart_difficulty', song.get('chartDifficulty', 0))))
+                except Exception:
+                    try:
+                        chart_d = Decimal(str(float(song.get('chart_difficulty', 0))))
+                    except Exception:
+                        chart_d = Decimal('0')
+
+                # Determine rank -> coefficient mapping (same as elsewhere)
+                rank = (song.get('rank') or '').strip()
+                rank_map = {
+                    'B': Decimal('9.6'), '2B': Decimal('11.2'), '3B': Decimal('12'),
+                    'A': Decimal('13.6'), '2A': Decimal('15.2'), '3A': Decimal('16.8'),
+                    'S': Decimal('20.0'), 'S+': Decimal('20.3'), '2S': Decimal('20.8'),
+                    '2S+': Decimal('21.1'), '3S': Decimal('21.6'), '3S+': Decimal('22.4')
+                }
+                coeff = rank_map.get(rank, Decimal('0'))
+                try:
+                    calc = (chart_d * coeff * achievement_for_calc / 100).to_integral_value(rounding=ROUND_DOWN)
+                    return int(calc)
+                except Exception:
+                    try:
+                        return int(chart_d * coeff * achievement_for_calc / 100)
+                    except Exception:
+                        return 0
+
+            def _normalize_clear_val(song):
+                # Look for numeric or textual clear markers in common places
+                if isinstance(song.get('stats'), dict):
+                    val = song['stats'].get('clearType')
+                else:
+                    val = song.get('clearType') or song.get('clear_type') or song.get('clear')
+                try:
+                    if val is None:
+                        return None
+                    return int(val)
+                except Exception:
+                    if isinstance(val, str):
+                        v = val.strip().upper()
+                        if v in ('AP', 'AP+'):
+                            return 5
+                        if v in ('FC', 'FC+'):
+                            return 3
+                    return None
+
+            for list_key in ('old_songs', 'new_songs'):
+                arr = data.get(list_key, [])
+                if not isinstance(arr, list):
+                    continue
+                for song in arr:
+                    try:
+                        clear_val = _normalize_clear_val(song)
+                        # Ensure calculated_rating is an int (or recompute if missing/invalid)
+                        try:
+                            cr = int(song.get('calculated_rating'))
+                        except Exception:
+                            cr = _compute_rating_from_fields(song)
+
+                        # If AP/AP+ then add +1 bonus (avoid double-applying by checking a flag)
+                        if clear_val in (5, 6) or (isinstance(song.get('clear_type'), str) and song.get('clear_type').upper() in ('AP', 'AP+')):
+                            if not song.get('ap_bonus_applied'):
+                                cr += 1
+                                song['calculated_rating'] = cr
+                                song['ap_bonus_applied'] = True
+                        else:
+                            # If calculated_rating missing, write computed value
+                            if 'calculated_rating' not in song or song.get('calculated_rating') is None:
+                                song['calculated_rating'] = cr
+                    except Exception:
+                        continue
+
+            # Return the (possibly adjusted) data for frontend localStorage handling
             return JsonResponse({
                 'status': 'success', 
                 'message': 'B50 data loaded successfully!',
@@ -710,14 +813,32 @@ def convert_astro_cache_to_b50(cache_data):
                     calculated_rating = int(chart_difficulty * achievement / 100 * 22.4)
                 except:
                     calculated_rating = 0
-            
+
+            # Detect clear type from possible locations: stats.clearType, clearType, clear_type, or clear
+            raw_clear_val = None
+            if isinstance(song.get('stats'), dict):
+                raw_clear_val = song['stats'].get('clearType')
+            raw_clear_val = raw_clear_val or song.get('clearType') or song.get('clear_type') or song.get('clear')
+            try:
+                raw_clear_int = int(raw_clear_val) if raw_clear_val is not None else None
+            except Exception:
+                raw_clear_int = None
+
+            # Apply +1 bonus for AP/AP+ (clearType 5/6)
+            try:
+                rating_int = int(calculated_rating) if calculated_rating else 0
+            except Exception:
+                rating_int = int(calculated_rating) if calculated_rating else 0
+            if raw_clear_int in (5, 6) or (isinstance(raw_clear_val, str) and raw_clear_val.strip().upper() in ('AP', 'AP+')):
+                rating_int += 1
+
             song_data = {
                 'song_name': str(song_name),
                 'difficulty_type': str(difficulty_type),
                 'rank': str(rank),
                 'achievement': float(achievement) if achievement else 0.0,
                 'chart_difficulty': float(chart_difficulty) if chart_difficulty else 0.0,
-                'calculated_rating': int(calculated_rating) if calculated_rating else 0,
+                'calculated_rating': rating_int,
                 'version': str(version)
             }
             
@@ -1950,14 +2071,41 @@ def convert_cache_data_to_all_scores_format(cache_data):
                             final_song_name = f"{base_name} [STD]"
                 
                 # Create song entry
+                # Map clearType to human-readable clear label (FC, FC+, AP, AP+)
+                clear_label = None
+                raw_clear = stats.get('clearType')
+                try:
+                    raw_clear_int = int(raw_clear) if raw_clear is not None else None
+                except Exception:
+                    raw_clear_int = None
+
+                if raw_clear_int == 3:
+                    clear_label = 'FC'
+                elif raw_clear_int == 4:
+                    clear_label = 'FC+'
+                elif raw_clear_int == 5:
+                    clear_label = 'AP'
+                elif raw_clear_int == 6:
+                    clear_label = 'AP+'
+
+                # Apply +1 bonus to calculated rating for AP/AP+ clear types (clearType 5 or 6)
+                try:
+                    rating_int = int(calculated_rating)
+                except Exception:
+                    rating_int = int(calculated_rating) if calculated_rating else 0
+
+                if raw_clear_int in (5, 6):
+                    rating_int += 1
+
                 song_entry = {
                     'song_name': final_song_name,
                     'difficulty_type': difficulty_type_mapped,
                     'rank': rank,
                     'achievement': float(achievement_rate),
                     'chart_difficulty': float(chart_difficulty),
-                    'calculated_rating': int(calculated_rating),
-                    'version': version
+                    'calculated_rating': rating_int,
+                    'version': version,
+                    'clear_type': clear_label
                 }
                 
                 # Categorize as old or new song based on version

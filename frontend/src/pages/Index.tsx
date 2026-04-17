@@ -43,6 +43,13 @@ interface Song {
   chart_difficulty: number | string
   calculated_rating: number
   version?: string
+  clear_type?: string | null
+}
+const CLEAR_ICONS: Record<string, string> = {
+  'FC': '/static/image/music_icon_fc.png',
+  'FC+': '/static/image/music_icon_fcp.png',
+  'AP': '/static/image/music_icon_ap.png',
+  'AP+': '/static/image/music_icon_app.png',
 }
 
 interface B50Data {
@@ -158,10 +165,12 @@ function SongCell({ song, songDict }: SongCellProps) {
   const chartTag = info.chart_type === 'STD' ? 'STD' : info.chart_type === 'DX' ? 'DX' : ''
   const chartTagClass = info.chart_type === 'STD' ? 'song-tag-std' : info.chart_type === 'DX' ? 'song-tag-dx' : ''
   const displayTitle = song.song_name.replace(/\s*\[(?:DX|STD)\]\s*$/i, '')
+  const clearIconSrc = song.clear_type ? (CLEAR_ICONS[song.clear_type] || null) : null
   return (
     <div className={`song-card ${diffClass(song.difficulty_type)}`}>
       <div className="song-card-art" style={info.image_url ? { backgroundImage: `url(${info.image_url})` } : undefined}>
         {chartTag && <span className={`song-tag ${chartTagClass}`}>{chartTag}</span>}
+        {clearIconSrc && <img src={clearIconSrc} className="song-clear-icon" alt={String(song.clear_type)} />}
         <span className="song-card-rating">{song.calculated_rating}</span>
       </div>
       <div className="song-card-info">
@@ -188,7 +197,8 @@ function SongTable({ songs, idPrefix }: SongTableProps) {
       <TableHeader>
         <TableRow>
           <TableHead className="w-8">#</TableHead>
-          <TableHead className="w-[360px]">Song Name</TableHead>
+          <TableHead className="w-12 text-center">Clear</TableHead>
+          <TableHead className="w-[320px]">Song Name</TableHead>
           <TableHead className="w-28">Difficulty</TableHead>
           <TableHead className="w-20">Rank</TableHead>
           <TableHead className="w-36">Achievement</TableHead>
@@ -198,11 +208,16 @@ function SongTable({ songs, idPrefix }: SongTableProps) {
       </TableHeader>
       <TableBody>
         {songs.length === 0
-          ? <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">No songs added yet.</TableCell></TableRow>
+          ? <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">No songs added yet.</TableCell></TableRow>
           : songs.map((s, i) => (
             <TableRow key={i} className={isNewChart(s, {}) ? 'new-chart-row' : 'old-chart-row'}>
               <TableCell className="text-muted-foreground text-xs w-8">{i + 1}</TableCell>
-              <TableCell className="font-medium max-w-[360px] truncate">{s.song_name}</TableCell>
+              <TableCell className="w-12 text-center">
+                {s.clear_type && CLEAR_ICONS[s.clear_type] ? (
+                  <img src={CLEAR_ICONS[s.clear_type]} alt={String(s.clear_type)} className="table-clear-icon" />
+                ) : null}
+              </TableCell>
+              <TableCell className="font-medium max-w-[320px] truncate">{s.song_name}</TableCell>
               <TableCell className="w-28">{s.difficulty_type}</TableCell>
               <TableCell className="w-20"><span className={`song-card-rank ${rankClass(s.rank)}`}>{s.rank}</span></TableCell>
               <TableCell className="w-36">{parseFloat(String(s.achievement)).toFixed(4)}%</TableCell>
