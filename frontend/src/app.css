@@ -207,7 +207,7 @@
   border-radius: 6px;
   box-shadow: 0 2px 6px rgba(0,0,0,0.45);
   letter-spacing: 0.2px;
-  z-index: 2;
+  z-index: 10;
 }
 
 .song-tag {
@@ -551,7 +551,7 @@
   width: 28px;
   height: 28px;
   object-fit: contain;
-  z-index: 2;
+  z-index: 30;
   filter: drop-shadow(0 2px 6px rgba(0,0,0,0.45));
   border-radius: 6px;
   background: rgba(255,255,255,0.02);
@@ -562,7 +562,31 @@
   width: 36px;
   height: 36px;
   object-fit: contain;
+  display: inline-block;
   vertical-align: middle;
   filter: drop-shadow(0 1px 4px rgba(0,0,0,0.35));
   border-radius: 6px;
+}
+
+/* Ensure icons remain visible on narrow/mobile viewports */
+@media (max-width: 640px) {
+  .song-clear-icon {
+    width: 36px;
+    height: 36px;
+    top: 8px;
+    right: 8px;
+  }
+  .table-clear-icon {
+    width: 40px;
+    height: 40px;
+  }
+}
+
+/* Mobile fallback: gradient text may not render reliably on some phones.
+   Provide solid-color fallbacks for rank classes for visibility. */
+@media (max-width: 640px) {
+  .rank-3s, .rank-3splus { background: none !important; -webkit-background-clip: unset !important; background-clip: unset !important; -webkit-text-fill-color: unset !important; color: #ff8a2b !important; text-shadow: 0 1px 2px rgba(0,0,0,0.35); }
+  .rank-pink { background: none !important; -webkit-background-clip: unset !important; background-clip: unset !important; -webkit-text-fill-color: unset !important; color: #ff4da6 !important; }
+  .rank-gold, .rank-s, .rank-splus { background: none !important; -webkit-background-clip: unset !important; background-clip: unset !important; -webkit-text-fill-color: unset !important; color: #fde68a !important; }
+  .rank-default { background: none !important; -webkit-background-clip: unset !important; background-clip: unset !important; -webkit-text-fill-color: unset !important; color: #8ed1ff !important; }
 }
