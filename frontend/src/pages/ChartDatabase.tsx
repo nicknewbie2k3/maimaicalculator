@@ -270,12 +270,16 @@ export default function ChartDatabase() {
   return (
     <MainLayout>
       <div className="w-full px-4 py-8 max-w-5xl mx-auto">
-        <div className="mb-8 text-center">
-          <h1 className="text-3xl font-bold text-foreground mb-1">Chart Database</h1>
-          <p className="text-sm text-muted-foreground">Browse and filter all maimai songs</p>
-        </div>
+          <div className="text-center mb-8">
+            <div className="mx-auto mb-1">
+              <span className="text-5xl font-extrabold leading-tight truncate" style={{ color: '#fff', textShadow: '0 2px 18px rgba(236,72,153,0.6)' }}>
+                Chart Database
+              </span>
+            </div>
+            <p className="text-sm page-subtitle">Browse and filter all maimai songs</p>
+          </div>
 
-        <div className="rounded-xl border bg-card shadow-sm p-4 mb-6">
+        <div className="rounded-xl border bg-card shadow-sm p-4 mb-6 semi-transparent">
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-3">Filters</p>
           <form className="flex flex-wrap gap-2 items-center" autoComplete="off" onSubmit={handleFilter}>
             <div className="w-44">
@@ -287,7 +291,7 @@ export default function ChartDatabase() {
             <div className="w-36">
               <Autocomplete id="filter_artist" value={filters.artist} onChange={setF('artist')} options={filterArtists} placeholder="Artist" />
             </div>
-            <Select value={filters.catcode} onValueChange={setF('catcode')}>
+            <Select value={filters.catcode} onValueChange={(v) => setF('catcode')(v ?? '')}>
               <SelectTrigger className="w-36">
                 <SelectValue placeholder="Catcode" />
               </SelectTrigger>
@@ -298,7 +302,7 @@ export default function ChartDatabase() {
                 </SelectGroup>
               </SelectContent>
             </Select>
-            <Select value={filters.chartType} onValueChange={setF('chartType')}>
+            <Select value={filters.chartType} onValueChange={(v) => setF('chartType')(v ?? '')}>
               <SelectTrigger className="w-32">
                 <SelectValue placeholder="Chart Type" />
               </SelectTrigger>
@@ -310,7 +314,7 @@ export default function ChartDatabase() {
                 </SelectGroup>
               </SelectContent>
             </Select>
-            <Select value={filters.difficulty} onValueChange={setF('difficulty')}>
+            <Select value={filters.difficulty} onValueChange={(v) => setF('difficulty')(v ?? '')}>
               <SelectTrigger className="w-36">
                 <SelectValue placeholder="Difficulty" />
               </SelectTrigger>
@@ -350,7 +354,7 @@ export default function ChartDatabase() {
           </span>
         </div>
 
-        <div className="rounded-xl border bg-card shadow-sm overflow-hidden mb-6">
+        <div className="rounded-xl border bg-card shadow-sm overflow-hidden mb-6 semi-transparent">
           <Table>
             <TableHeader>
               <TableRow>

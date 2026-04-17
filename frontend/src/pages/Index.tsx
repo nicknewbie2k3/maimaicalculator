@@ -136,6 +136,7 @@ function SongCell({ song, songDict }: SongCellProps) {
   const info: SongInfo = songDict[song.song_name] ?? {}
   const chartTag = info.chart_type === 'STD' ? 'STD' : info.chart_type === 'DX' ? 'DX' : ''
   const chartTagClass = info.chart_type === 'STD' ? 'song-tag-std' : info.chart_type === 'DX' ? 'song-tag-dx' : ''
+  const displayTitle = song.song_name.replace(/\s*\[(?:DX|STD)\]\s*$/i, '')
   return (
     <div className={`song-card ${diffClass(song.difficulty_type)}`}>
       <div className="song-card-art" style={info.image_url ? { backgroundImage: `url(${info.image_url})` } : undefined}>
@@ -143,7 +144,7 @@ function SongCell({ song, songDict }: SongCellProps) {
         <span className="song-card-rating">{song.calculated_rating}</span>
       </div>
       <div className="song-card-info">
-        <div className="song-card-title" title={song.song_name}>{song.song_name}</div>
+        <div className="song-card-title" title={song.song_name}>{displayTitle}</div>
         <div className="song-card-meta">
           <span className="song-card-rank">{song.rank}</span>
           <span className="song-card-ach">{parseFloat(String(song.achievement)).toFixed(4)}%</span>
@@ -162,16 +163,16 @@ interface SongTableProps {
 
 function SongTable({ songs, idPrefix }: SongTableProps) {
   return (
-    <Table id={`${idPrefix}Header`}>
+    <Table id={`${idPrefix}Header`} className="table-fixed">
       <TableHeader>
         <TableRow>
-          <TableHead>#</TableHead>
-          <TableHead>Song Name</TableHead>
-          <TableHead>Difficulty</TableHead>
-          <TableHead>Rank</TableHead>
-          <TableHead>Achievement</TableHead>
-          <TableHead>Chart Difficulty</TableHead>
-          <TableHead>Calculated Rating</TableHead>
+          <TableHead className="w-8">#</TableHead>
+          <TableHead className="w-[360px]">Song Name</TableHead>
+          <TableHead className="w-28">Difficulty</TableHead>
+          <TableHead className="w-20">Rank</TableHead>
+          <TableHead className="w-36">Achievement</TableHead>
+          <TableHead className="w-28 text-center">Chart Difficulty</TableHead>
+          <TableHead className="w-36 text-center">Calculated Rating</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -179,13 +180,13 @@ function SongTable({ songs, idPrefix }: SongTableProps) {
           ? <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">No songs added yet.</TableCell></TableRow>
           : songs.map((s, i) => (
             <TableRow key={i} className={isNewChart(s, {}) ? 'new-chart-row' : 'old-chart-row'}>
-              <TableCell className="text-muted-foreground text-xs">{i + 1}</TableCell>
-              <TableCell className="font-medium">{s.song_name}</TableCell>
-              <TableCell>{s.difficulty_type}</TableCell>
-              <TableCell>{s.rank}</TableCell>
-              <TableCell>{parseFloat(String(s.achievement)).toFixed(4)}%</TableCell>
-              <TableCell>{parseFloat(String(s.chart_difficulty)).toFixed(1)}</TableCell>
-              <TableCell className="font-semibold text-primary">{s.calculated_rating}</TableCell>
+              <TableCell className="text-muted-foreground text-xs w-8">{i + 1}</TableCell>
+              <TableCell className="font-medium max-w-[360px] truncate">{s.song_name}</TableCell>
+              <TableCell className="w-28">{s.difficulty_type}</TableCell>
+              <TableCell className="w-20">{s.rank}</TableCell>
+              <TableCell className="w-36">{parseFloat(String(s.achievement)).toFixed(4)}%</TableCell>
+              <TableCell className="w-28 text-center">{parseFloat(String(s.chart_difficulty)).toFixed(1)}</TableCell>
+              <TableCell className="font-semibold text-primary w-36 text-center">{s.calculated_rating}</TableCell>
             </TableRow>
           ))}
       </TableBody>
@@ -367,19 +368,50 @@ export default function Index() {
 
   async function printB50() {
     if (!gridRef.current) return
-    showStatus('Generating image...', 'info', 0)
+    showStatus('Generating image from fixed viewport...', 'info', 0)
     const el = gridRef.current
     const prevOverflow = el.style.overflow
     const prevWidth = el.style.width
-    el.style.overflow = 'visible'
-    el.style.width = 'max-content'
-    const w = el.scrollWidth
-    const h = el.scrollHeight
+
+    // Render the grid in a hidden, fixed-size offscreen container so output is consistent
+    const FIXED_VIEWPORT_WIDTH = 1000
     const MAX = 32000
-    const scale = Math.min(2, MAX / Math.max(w, h))
+    let container: HTMLDivElement | null = null
     try {
-      const canvas = await html2canvas(el, {
-        backgroundColor: null,
+      // create offscreen container
+      container = document.createElement('div')
+      container.style.position = 'fixed'
+      container.style.left = '-100000px'
+      container.style.top = '0'
+      container.style.width = `${FIXED_VIEWPORT_WIDTH}px`
+      container.style.overflow = 'visible'
+      container.style.visibility = 'visible'
+      container.style.zIndex = '2147483647'
+
+      // clone the grid and sanitize styles that may vary per user
+      const clone = el.cloneNode(true) as HTMLElement
+      clone.querySelectorAll('[id]').forEach(n => n.removeAttribute('id'))
+      clone.style.width = '100%'
+      clone.style.boxSizing = 'border-box'
+      clone.style.transform = 'none'
+      clone.style.transition = 'none'
+      clone.querySelectorAll('*').forEach(node => {
+        const nn = node as HTMLElement
+        nn.style.transition = 'none'
+        nn.style.transform = 'none'
+        nn.style.willChange = 'auto'
+      })
+
+      container.appendChild(clone)
+      document.body.appendChild(container)
+
+      const w = clone.scrollWidth
+      const h = clone.scrollHeight
+      const scale = Math.min(2, MAX / Math.max(w, h))
+
+      const bg = window.getComputedStyle(el).backgroundColor || '#0b1020'
+      const canvas = await html2canvas(clone, {
+        backgroundColor: bg,
         scale,
         useCORS: true,
         width: w,
@@ -387,12 +419,84 @@ export default function Index() {
         windowWidth: w,
         windowHeight: h,
       })
-      const a = document.createElement('a'); a.download = 'maimai_b50_grid.png'; a.href = canvas.toDataURL('image/png')
-      a.click()
-      showStatus('Image generated!', 'success')
+
+      const dataUrl = canvas.toDataURL('image/png')
+
+      // create a modal preview overlay so the user can inspect before downloading
+      const overlay = document.createElement('div') as HTMLDivElement
+      overlay.style.position = 'fixed'
+      overlay.style.left = '0'
+      overlay.style.top = '0'
+      overlay.style.width = '100%'
+      overlay.style.height = '100%'
+      overlay.style.display = 'flex'
+      overlay.style.alignItems = 'center'
+      overlay.style.justifyContent = 'center'
+      overlay.style.background = 'rgba(0,0,0,0.6)'
+      overlay.style.zIndex = '2147483647'
+
+      const modal = document.createElement('div') as HTMLDivElement
+      modal.style.background = '#0b1020'
+      modal.style.padding = '12px'
+      modal.style.borderRadius = '8px'
+      modal.style.maxWidth = 'calc(100% - 40px)'
+      modal.style.maxHeight = 'calc(100% - 120px)'
+      modal.style.overflow = 'auto'
+      modal.style.boxShadow = '0 8px 20px rgba(0,0,0,0.6)'
+      modal.style.display = 'flex'
+      modal.style.flexDirection = 'column'
+      modal.style.alignItems = 'stretch'
+
+      const img = document.createElement('img') as HTMLImageElement
+      img.src = dataUrl
+      img.style.maxWidth = '100%'
+      img.style.maxHeight = 'calc(100vh - 200px)'
+      img.style.display = 'block'
+      img.style.margin = '0 auto'
+
+      const controls = document.createElement('div') as HTMLDivElement
+      controls.style.display = 'flex'
+      controls.style.justifyContent = 'flex-end'
+      controls.style.gap = '8px'
+      controls.style.marginTop = '10px'
+
+      const downloadLink = document.createElement('a') as HTMLAnchorElement
+      downloadLink.href = dataUrl
+      downloadLink.download = 'maimai_b50_grid.png'
+      downloadLink.textContent = 'Download'
+      downloadLink.style.background = '#7c3aed'
+      downloadLink.style.color = '#fff'
+      downloadLink.style.padding = '8px 12px'
+      downloadLink.style.borderRadius = '6px'
+      downloadLink.style.textDecoration = 'none'
+
+      const closeBtn = document.createElement('button') as HTMLButtonElement
+      closeBtn.textContent = 'Close'
+      closeBtn.style.background = 'transparent'
+      closeBtn.style.color = '#fff'
+      closeBtn.style.padding = '8px 12px'
+      closeBtn.style.border = '1px solid rgba(255,255,255,0.08)'
+      closeBtn.style.borderRadius = '6px'
+
+      const removeOverlay = () => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay) }
+
+      closeBtn.addEventListener('click', () => removeOverlay())
+      downloadLink.addEventListener('click', () => setTimeout(removeOverlay, 250))
+
+      controls.appendChild(downloadLink)
+      controls.appendChild(closeBtn)
+      modal.appendChild(img)
+      modal.appendChild(controls)
+      modal.addEventListener('click', e => e.stopPropagation())
+      overlay.addEventListener('click', () => removeOverlay())
+      overlay.appendChild(modal)
+      document.body.appendChild(overlay)
+
+      showStatus('Preview ready — close to dismiss or click Download.', 'success')
     } catch (err) {
       showStatus('Error: ' + (err as Error).message, 'danger')
     } finally {
+      if (container && container.parentNode) container.parentNode.removeChild(container)
       el.style.overflow = prevOverflow
       el.style.width = prevWidth
     }
@@ -402,8 +506,32 @@ export default function Index() {
   const oldRating = display.old_songs.reduce((s, x) => s + x.calculated_rating, 0)
   const newRating = display.new_songs.reduce((s, x) => s + x.calculated_rating, 0)
   const totalRating = oldRating + newRating
+  // Milestone image logic: choose the highest threshold <= totalRating
+  const _milestones = [
+    { t: 15000, file: '15k.png' },
+    { t: 14500, file: '14k5.png' },
+    { t: 14000, file: '14k.png' },
+    { t: 13000, file: '13k.png' },
+    { t: 12000, file: '12k.png' },
+    { t: 10000, file: '10k.png' },
+    { t: 7000, file: '7k.png' },
+    { t: 4000, file: '4k.png' },
+    { t: 2000, file: '2k.png' },
+    { t: 1000, file: '1k.png' },
+  ]
+  const milestoneFile = _milestones.find(m => totalRating >= m.t)?.file ?? null
+  const milestoneStyle = milestoneFile ? {
+    backgroundImage: `url('/static/image/${milestoneFile}'), linear-gradient(135deg, #ec4899 0%, #a855f7 100%)`,
+    backgroundSize: 'cover, cover',
+    backgroundPosition: 'center, center',
+    backgroundRepeat: 'no-repeat, no-repeat',
+  } : undefined
   const count = display.old_songs.length + display.new_songs.length
   const avgRating = count > 0 ? Math.round(totalRating / count) : 0
+  const oldCount = display.old_songs.length
+  const newCount = display.new_songs.length
+  const oldAvg = oldCount > 0 ? Math.round(oldRating / oldCount) : 0
+  const newAvg = newCount > 0 ? Math.round(newRating / newCount) : 0
 
   const oldPad: (Song | null)[] = [...display.old_songs]; while (oldPad.length < 35) oldPad.push(null)
   const newPad: (Song | null)[] = [...display.new_songs]; while (newPad.length < 15) newPad.push(null)
@@ -415,18 +543,21 @@ export default function Index() {
     <MainLayout>
       <div className="w-full px-4 py-8 max-w-5xl mx-auto">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-foreground mb-1">AstroDX Rating Calculator</h1>
-          <p className="text-sm text-muted-foreground">Track your maimai B50 best scores</p>
+          <div className="mx-auto mb-1">
+            <span className="text-5xl font-extrabold leading-tight truncate" style={{ color: '#fff', textShadow: '0 2px 18px rgba(236,72,153,0.6)' }}>
+              AstroDX Rating Calculator
+            </span>
+          </div>
         </div>
 
-        <div className="rounded-xl border bg-card shadow-sm px-4 py-3 mb-6 flex flex-wrap gap-3 items-center">
+        <div className="rounded-xl border bg-card shadow-sm px-4 py-3 mb-6 flex flex-wrap gap-3 items-center semi-transparent">
           <div className="flex items-center gap-2">
             <Label htmlFor="username-input" className="text-xs text-muted-foreground">Player</Label>
             <Input
               id="username-input"
               type="text"
               value={username}
-              onChange={e => updateUsername(e.target.value)}
+              onChange={e => updateUsername((e.target as HTMLInputElement).value)}
               placeholder="Your name"
               className="h-8 w-40"
               maxLength={32}
@@ -470,7 +601,7 @@ export default function Index() {
           </Alert>
         )}
 
-        <div className="rounded-xl border bg-card shadow-sm p-4 mb-6">
+        <div className="rounded-xl border bg-card shadow-sm p-4 mb-6 semi-transparent">
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-3">Add Song</p>
           <form className="flex flex-wrap gap-3 items-end" autoComplete="off" onSubmit={addSong}>
             <div className="flex flex-col gap-1.5 flex-1 min-w-[200px]">
@@ -481,7 +612,7 @@ export default function Index() {
                   type="text"
                   value={songInput}
                   required
-                  onChange={e => { setSongInput(e.target.value); buildDropdown(e.target.value) }}
+                  onChange={e => { const v = (e.target as HTMLInputElement).value; setSongInput(v); buildDropdown(v); }}
                   placeholder="Song Name or Alias"
                 />
                 {dropdown.length > 0 && (
@@ -503,7 +634,7 @@ export default function Index() {
             </div>
             <div className="flex flex-col gap-1.5">
               <Label>Difficulty</Label>
-              <Select value={difficulty} onValueChange={setDifficulty}>
+              <Select value={difficulty} onValueChange={(v) => setDifficulty(v ?? 'Basic')}>
                 <SelectTrigger className="w-36">
                   <SelectValue />
                 </SelectTrigger>
@@ -527,7 +658,7 @@ export default function Index() {
                 max="101"
                 value={achievement}
                 required
-                onChange={e => setAchievement(e.target.value)}
+                onChange={e => setAchievement((e.target as HTMLInputElement).value)}
                 placeholder="e.g. 100.5"
               />
             </div>
@@ -535,7 +666,7 @@ export default function Index() {
           </form>
         </div>
 
-        <p className="text-xs text-muted-foreground mb-6 flex items-center gap-1.5 bg-muted/50 border rounded-lg px-3 py-2">
+        <p className="text-xs mb-6 flex items-center gap-1.5 bg-muted/50 border rounded-lg px-3 py-2" style={{ color: 'rgba(0,0,0,0.95)' }}>
           <Info className="size-3.5 shrink-0" />
           To add an alias to a song, visit the Chart Database page.
         </p>
@@ -544,9 +675,9 @@ export default function Index() {
         <div className="rounded-xl border bg-card shadow-sm mb-6 overflow-hidden">
           <div ref={gridRef} className="b50-stage">
             <div className="flex flex-wrap items-center gap-4 px-5 py-4">
-              <div className="flex flex-col min-w-0">
+              <div className="flex flex-col flex-1 min-w-[260px]">
                 <span className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: '#c4b5fd' }}>Player</span>
-                <span className="text-2xl font-black leading-tight truncate" style={{ color: '#fff', textShadow: '0 2px 12px rgba(236,72,153,0.5)' }}>
+                <span className="text-5xl font-extrabold leading-tight truncate" style={{ color: '#fff', textShadow: '0 2px 18px rgba(236,72,153,0.6)' }}>
                   {username || 'Unnamed Player'}
                 </span>
               </div>
@@ -555,22 +686,23 @@ export default function Index() {
                   <div className="rounded-lg px-3 py-1.5 text-center" style={{ background: 'rgba(59,130,246,0.15)', border: '1px solid rgba(96,165,250,0.4)' }}>
                     <div className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#93c5fd' }}>Old B35</div>
                     <div className="text-lg font-black leading-none mt-0.5" style={{ color: '#fff' }}>{oldRating}</div>
+                    <div className="b50-small-stat">{oldAvg}</div>
                   </div>
                 )}
-                <div className="rounded-lg px-4 py-1.5 text-center" style={{ background: 'linear-gradient(135deg, #ec4899 0%, #a855f7 100%)', boxShadow: '0 4px 14px rgba(236,72,153,0.4)' }}>
-                  <div className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#fbcfe8' }}>Total</div>
-                  <div className="text-xl font-black leading-none mt-0.5" style={{ color: '#fff' }}>{totalRating}</div>
+                <div className={`rounded-lg px-4 py-1.5 text-center b50-total`} style={milestoneStyle}>
+                  <div className="text-[9px] font-bold uppercase tracking-widest b50-total-label">Total</div>
+                  <div className="text-xl font-black leading-none mt-0.5 b50-total-value">{totalRating}</div>
+                  <div className="b50-small-stat">{avgRating}</div>
                 </div>
                 {display.new_songs.length > 0 && (
                   <div className="rounded-lg px-3 py-1.5 text-center" style={{ background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(134,239,172,0.4)' }}>
                     <div className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#86efac' }}>New B15</div>
                     <div className="text-lg font-black leading-none mt-0.5" style={{ color: '#fff' }}>{newRating}</div>
+                    <div className="b50-small-stat">{newAvg}</div>
                   </div>
                 )}
               </div>
-              <div className="w-full text-xs" style={{ color: '#cbd5e1' }}>
-                {count} songs · avg {avgRating} per song
-              </div>
+              {/* removed Average Rating subtitle (averages now shown under each category) */}
             </div>
 
             {display.old_songs.length > 0 && (
@@ -607,7 +739,7 @@ export default function Index() {
         {tableOld.length > 0 && (
           <div className="rounded-xl border bg-card shadow-sm overflow-hidden mb-6">
             <div className="px-4 py-3 border-b bg-muted/30">
-              <h2 className="text-sm font-semibold">Old Songs — Best 35</h2>
+              <h2 className="text-sm font-semibold">Old Songs — All {fullData?.old_songs?.length ?? display.old_songs.length} chart scores</h2>
             </div>
             <SongTable label="Old Songs" songs={tableOld} idPrefix="old" />
           </div>
@@ -615,7 +747,7 @@ export default function Index() {
         {tableNew.length > 0 && (
           <div className="rounded-xl border bg-card shadow-sm overflow-hidden mb-6">
             <div className="px-4 py-3 border-b bg-muted/30">
-              <h2 className="text-sm font-semibold">New Songs — Best 15</h2>
+              <h2 className="text-sm font-semibold">New Songs — All {fullData?.new_songs?.length ?? display.new_songs.length} chart scores</h2>
             </div>
             <SongTable label="New Songs" songs={tableNew} idPrefix="new" />
           </div>

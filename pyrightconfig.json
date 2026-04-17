@@ -1,0 +1,12 @@
+{
+  "typeCheckingMode": "basic",
+  "reportMissingImports": false,
+  "executionEnvironments": [
+    {
+      "root": "./",
+      "extraPaths": [
+        "."
+      ]
+    }
+  ]
+}

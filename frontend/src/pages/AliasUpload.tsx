@@ -46,13 +46,16 @@ export default function AliasUpload() {
       <div className="max-w-2xl mx-auto my-8 px-4 flex flex-col gap-4">
 
         {/* Page header */}
-        <div className="rounded-xl border bg-primary text-primary-foreground px-5 py-3.5 flex items-center gap-2.5">
-          <FileUp className="size-4.5 shrink-0" />
-          <h1 className="text-base font-semibold">Add Aliases via File</h1>
+        <div className="text-center mb-8">
+          <div className="mx-auto mb-1">
+            <span className="text-4xl font-extrabold leading-tight truncate" style={{ color: '#fff', textShadow: '0 2px 18px rgba(236,72,153,0.6)' }}>
+              Add Aliases via File
+            </span>
+          </div>
         </div>
 
         {/* Format info */}
-        <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
+        <div className="rounded-xl border bg-card shadow-sm overflow-hidden semi-transparent">
           <div className="px-4 py-3 border-b bg-muted/40 flex items-center gap-2">
             <Info className="size-3.5 text-muted-foreground shrink-0" />
             <span className="text-sm text-muted-foreground">
@@ -106,7 +109,7 @@ export default function AliasUpload() {
         </Alert>
 
         {/* Upload form */}
-        <div className="rounded-xl border bg-card shadow-sm p-4 flex flex-col gap-3">
+        <div className="rounded-xl border bg-card shadow-sm p-4 flex flex-col gap-3 semi-transparent">
           <div className="flex items-center justify-between">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Upload Alias File</p>
             <Link href="/chart-database/">

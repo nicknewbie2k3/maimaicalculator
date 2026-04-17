@@ -20,14 +20,11 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
     href === '/' ? url === '/' : url.startsWith(href)
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-transparent">
       <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-xl border-b border-border shadow-sm">
         <div className="flex h-16 items-center justify-between px-6 max-w-screen-2xl mx-auto">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold text-sm shadow-sm">
-              ♪
-            </div>
-            <span className="font-bold text-foreground tracking-tight">AstroDX</span>
+            <img src="/static/image/webLogo.png" alt="AstroDX" className="h-6 sm:h-7 object-contain" />
             <span className="text-border text-lg leading-none">·</span>
             <span className="text-primary font-semibold text-sm">maimai</span>
           </div>

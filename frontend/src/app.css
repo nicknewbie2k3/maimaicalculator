@@ -1,3 +1,4 @@
+/* stylelint-disable at-rule-no-unknown */
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
@@ -123,6 +124,12 @@
     }
   body {
     @apply bg-background text-foreground;
+    /* page background image served from Django static files */
+    background-image: url('/static/image/backgroundImage.jpg');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
     }
   html {
     @apply font-sans;
@@ -130,11 +137,11 @@
 }
 
 /* B50 grid */
-.diff-basic    { background-color: #00b62a !important; }
-.diff-advanced { background-color: #d1ae00 !important; }
-.diff-expert   { background-color: #d40213 !important; }
-.diff-master   { background-color: #9e009e !important; }
-.diff-remas    { background-color: #610061 !important; }
+.diff-basic    { background: linear-gradient(180deg,#7CE85A 0%,#39C23A 100%) !important; border: 3px solid #39C23A; }
+.diff-advanced { background: linear-gradient(180deg,#FFD15A 0%,#FFB84D 100%) !important; border: 3px solid #FFB84D; }
+.diff-expert   { background: linear-gradient(180deg,#ff475f 0%,#ff2f45 100%) !important; border: 3px solid #ff2f45; }
+.diff-master   { background: linear-gradient(180deg,#8A4BFF 0%,#6F2AD1 100%) !important; border: 3px solid #6F2AD1; }
+.diff-remas    { background: linear-gradient(180deg,#E9C7FF 0%,#CFA1FF 100%) !important; border: 3px solid #CFA1FF; }
 
 .b50-grid {
   display: grid;
@@ -151,11 +158,14 @@
   flex-direction: column;
   border-radius: 10px;
   overflow: hidden;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.15);
+  /* remove inset highlight (creates a thin visible line at the inner edge) */
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  background-clip: padding-box;
   transition: transform 0.15s, box-shadow 0.15s;
-  aspect-ratio: 1 / 1;
+  aspect-ratio: 3 / 2;
+  box-sizing: border-box;
 }
-.song-card:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.2); }
+.song-card:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0,0,0,0.5); }
 .song-card-empty {
   background: rgba(255,255,255,0.03);
   border: 1px dashed rgba(255,255,255,0.08);
@@ -172,7 +182,8 @@
 .song-card-art::after {
   content: '';
   position: absolute; inset: 0;
-  background: linear-gradient(180deg, rgba(0,0,0,0.25) 0%, rgba(0,0,0,0) 40%);
+  /* very subtle neutral overlay to avoid any colored edges or strong bands */
+  background: linear-gradient(180deg, rgba(0,0,0,0.06) 0%, rgba(0,0,0,0.00) 40%);
   pointer-events: none;
 }
 
@@ -180,23 +191,23 @@
   position: absolute;
   right: 6px; bottom: 6px;
   font-weight: 900;
-  font-size: 0.95rem;
+  font-size: 1rem;
   color: #111;
   background: linear-gradient(135deg, #fff 0%, #e5e7eb 100%);
-  padding: 2px 8px;
+  padding: 3px 8px;
   border-radius: 6px;
   box-shadow: 0 2px 6px rgba(0,0,0,0.45);
-  letter-spacing: 0.3px;
+  letter-spacing: 0.2px;
   z-index: 2;
 }
 
 .song-tag {
   position: absolute;
   top: 6px; left: 6px;
-  font-size: 0.6rem;
+  font-size: 0.85rem;
   font-weight: 900;
-  padding: 1px 6px;
-  border-radius: 4px;
+  padding: 4px 8px;
+  border-radius: 6px;
   letter-spacing: 1px;
   color: #fff;
   text-shadow: 0 1px 1px rgba(0,0,0,0.6);
@@ -208,12 +219,32 @@
 
 .song-card-info {
   position: relative;
-  padding: 5px 7px 6px;
-  background: rgba(0,0,0,0.42);
-  backdrop-filter: blur(2px);
+  padding: 8px 7px 6px;
+  /* keep the info area slightly translucent and blurred */
+  background: rgba(0,0,0,0.28);
+  backdrop-filter: blur(6px);
   color: #fff;
-  border-top: 1px solid rgba(255,255,255,0.1);
+  border-top: none; /* remove hard 1px border to avoid a seam */
 }
+.song-card-info::before {
+  content: '';
+  /* confine gradient to the info area; do not overlap the image */
+  position: absolute; left: 0; right: 0; top: 0;
+  height: 100%;
+  /* darkest band at the top of the info strip (50% opacity), fully inside the info area */
+  background: linear-gradient(180deg,
+    rgba(0,0,0,0.50) 0%,
+    rgba(0,0,0,0.50) 36%,
+    rgba(0,0,0,0.36) 54%,
+    rgba(0,0,0,0.00) 100%
+  );
+  pointer-events: none;
+  z-index: 0;
+  /* force a composited layer to reduce subpixel seam/banding artifacts */
+  transform: translateZ(0);
+  will-change: transform, opacity;
+}
+.song-card-info > * { position: relative; z-index: 1; }
 .song-card-title {
   font-weight: 800;
   font-size: 0.72rem;
@@ -234,7 +265,7 @@
 }
 .song-card-rank {
   font-weight: 900;
-  font-size: 0.95rem;
+  font-size: 1.15rem;
   color: #fde68a;
   text-shadow: 0 1px 2px rgba(0,0,0,0.8);
   letter-spacing: 0.5px;
@@ -248,9 +279,9 @@
   font-weight: 700;
   color: #fff;
   background: rgba(0,0,0,0.45);
-  padding: 1px 5px;
-  border-radius: 3px;
-  font-size: 0.65rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.85rem;
 }
 
 .old-chart-row { background-color: rgba(0,123,255,0.05) !important; }
@@ -282,3 +313,181 @@
   border-left: 4px solid #22c55e;
 }
 .b50-banner-stat { font-size: 1.1rem; font-weight: 900; letter-spacing: 0.5px; color: #fff; }
+
+/* small rounded stat used beneath rating boxes */
+.b50-small-stat {
+  display: block;
+  margin-top: 6px;
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+/* Total rating styles */
+.b50-total {
+  background: linear-gradient(135deg, #ec4899 0%, #a855f7 100%);
+  box-shadow: 0 4px 14px rgba(236,72,153,0.4);
+  color: #fff;
+}
+.b50-total.b50-total-rainbow {
+  /* Use provided image from Django static files on top with a gradient fallback underneath. */
+  background-image: url('/static/image/rainbowRating.png'), linear-gradient(90deg, #ff004d 0%, #ff7a00 16%, #fffb00 33%, #00d000 50%, #0074ff 66%, #7a00ff 83%, #ff00bf 100%);
+  background-size: cover, cover;
+  background-position: center, center;
+  background-repeat: no-repeat, no-repeat;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+  color: #fff;
+}
+.b50-total-label {
+  color: #fbcfe8;
+  font-weight: 700;
+}
+.b50-total-value {
+  color: #fff;
+  font-weight: 900;
+  font-size: 1.25rem;
+}
+
+/* Add a subtle dark overlay layer inside the total box so text remains readable on images */
+.b50-total {
+  position: relative;
+  overflow: hidden;
+}
+.b50-total::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.28);
+  z-index: 0;
+  pointer-events: none;
+}
+.b50-total > * { position: relative; z-index: 1; }
+
+/* Semi-transparent bars for function/search areas */
+.semi-transparent {
+  /* 50% opaque background with mild blur for legibility */
+  background-color: rgba(255,255,255,0.5) !important;
+  backdrop-filter: blur(6px);
+  /* keep border subtle when using the existing "border" utility */
+  border-color: rgba(255,255,255,0.12) !important;
+}
+
+/* Label and header text inside the semi-transparent bars should be dark for contrast */
+.semi-transparent .text-muted-foreground,
+.semi-transparent label,
+.semi-transparent .uppercase,
+.semi-transparent .font-semibold {
+  color: rgba(0,0,0,0.9) !important;
+}
+
+/* Inputs, selects and select triggers inside the semi-transparent bars: white fill + dark text */
+.semi-transparent input,
+.semi-transparent textarea,
+.semi-transparent select,
+.semi-transparent .input,
+.semi-transparent .select-trigger,
+.semi-transparent .radix-select-trigger,
+.semi-transparent .select {
+  background-color: #ffffff !important;
+  color: rgba(0,0,0,0.95) !important;
+  border-color: rgba(0,0,0,0.12) !important;
+  box-shadow: none !important;
+}
+
+/* Placeholder should be muted but visible */
+.semi-transparent input::placeholder,
+.semi-transparent textarea::placeholder {
+  color: rgba(0,0,0,0.45) !important;
+}
+
+.dark .semi-transparent {
+  background-color: rgba(12,14,20,0.5) !important;
+  border-color: rgba(255,255,255,0.06) !important;
+}
+
+/* In dark mode still use white fill for inputs (keeps boxes consistent) */
+.dark .semi-transparent input,
+.dark .semi-transparent select,
+.dark .semi-transparent .input,
+.dark .semi-transparent .select-trigger {
+  background-color: #ffffff !important;
+  color: rgba(0,0,0,0.95) !important;
+}
+
+/* Make destructive (Clear) button solid red with white text inside semi-transparent bars */
+.semi-transparent button[data-slot="button"][class*="text-destructive"],
+.semi-transparent button[data-slot="button"][class*="bg-destructive"] {
+  background-color: var(--destructive) !important;
+  color: #ffffff !important;
+  border-color: transparent !important;
+}
+.semi-transparent button[data-slot="button"][class*="text-destructive"]:hover {
+  filter: brightness(0.95) !important;
+}
+.dark .semi-transparent button[data-slot="button"][class*="text-destructive"],
+.dark .semi-transparent button[data-slot="button"][class*="bg-destructive"] {
+  background-color: var(--destructive) !important;
+  color: #ffffff !important;
+  border-color: transparent !important;
+}
+
+/* Page subtitle (centered header smaller line) */
+.page-subtitle {
+  color: #ffffff !important;
+}
+
+/* Ensure select triggers and width helpers inside semi-transparent containers are white */
+.semi-transparent .select-trigger,
+.semi-transparent .SelectTrigger,
+.semi-transparent .radix-select-trigger,
+.semi-transparent [role="combobox"],
+.semi-transparent [data-state] {
+  background-color: #ffffff !important;
+  color: rgba(0,0,0,0.95) !important;
+  border-color: rgba(0,0,0,0.12) !important;
+  box-shadow: none !important;
+}
+
+.semi-transparent .select-trigger > button,
+.semi-transparent .SelectTrigger > button,
+.semi-transparent button[role="combobox"] {
+  background-color: #ffffff !important;
+  color: rgba(0,0,0,0.95) !important;
+  border-color: rgba(0,0,0,0.12) !important;
+}
+
+/* Common width helpers used for select controls */
+.semi-transparent .w-36,
+.semi-transparent .w-32,
+.semi-transparent .w-44 {
+  background-color: #ffffff !important;
+  color: rgba(0,0,0,0.95) !important;
+}
+
+/* Force entire table inside a semi-transparent card to have a white background and dark text */
+.semi-transparent table,
+.semi-transparent table thead,
+.semi-transparent table tbody,
+.semi-transparent table tr,
+.semi-transparent table th,
+.semi-transparent table td {
+  background-color: #ffffff !important;
+  color: rgba(0,0,0,0.95) !important;
+  border-color: rgba(0,0,0,0.06) !important;
+}
+
+.semi-transparent table th {
+  font-weight: 700;
+}
+
+.semi-transparent table tr + tr td {
+  border-top: 1px solid rgba(0,0,0,0.06) !important;
+}
+
+.dark .semi-transparent table,
+.dark .semi-transparent table th,
+.dark .semi-transparent table td {
+  background-color: #ffffff !important;
+  color: rgba(0,0,0,0.95) !important;
+}

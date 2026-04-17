@@ -20,14 +20,13 @@ export default function DatabaseUpload() {
   return (
     <MainLayout>
       <div className="max-w-md mx-auto my-12 px-4">
-        <div className="rounded-xl border bg-card shadow-sm p-8">
-          <div className="flex items-center gap-3 mb-1">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <Upload className="size-4" />
-            </div>
-            <h1 className="text-xl font-bold">Upload Database</h1>
+        <div className="rounded-xl border bg-card shadow-sm p-8 semi-transparent">
+          <div className="text-center mb-6">
+            <span className="text-3xl font-extrabold leading-tight" style={{ color: '#fff', textShadow: '0 2px 18px rgba(236,72,153,0.6)' }}>
+              Upload Database
+            </span>
           </div>
-          <p className="text-sm text-muted-foreground mb-6 ml-12">Update the maimai song database JSON</p>
+          <p className="text-sm text-muted-foreground mb-6">Update the maimai song database JSON</p>
 
           {message && (
             <p className={`text-sm mb-4 rounded-lg px-3 py-2 ${message.startsWith('Error') ? 'bg-destructive/10 text-destructive' : 'bg-green-50 text-green-700 border border-green-200'}`}>
