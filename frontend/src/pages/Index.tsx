@@ -645,12 +645,12 @@ export default function Index() {
 
   return (
     <MainLayout>
-      <div className="w-full px-4 py-8 max-w-5xl mx-auto">
+      <div className="w-full px-4 py-8 max-w-full sm:max-w-5xl mx-auto">
         <div className="text-center mb-8">
-          <div className="mx-auto mb-1">
-            <span className="text-5xl font-extrabold leading-tight truncate" style={{ color: '#fff', textShadow: '0 2px 18px rgba(236,72,153,0.6)' }}>
+          <div className="mx-auto mb-1 max-w-full">
+            <h1 className="font-extrabold leading-tight" style={{ color: '#fff', textShadow: '0 2px 18px rgba(236,72,153,0.6)', fontSize: 'clamp(1.4rem,6vw,3rem)' }}>
               AstroDX Rating Calculator
-            </span>
+            </h1>
           </div>
         </div>
 
