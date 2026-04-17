@@ -279,6 +279,48 @@
   text-shadow: 0 1px 2px rgba(0,0,0,0.8);
   letter-spacing: 0.5px;
 }
+
+/* Rank color mappings per user request:
+   - 3S+/3S: orange-yellow gradient
+   - 3A/2A/A: pink gradient
+   - SS+,SS,S+,S: default (gold/yellow) gradient
+   - rest: light blue gradient
+*/
+.rank-3s,
+.rank-3splus {
+  background: linear-gradient(90deg, #ff7a00 0%, #ffd54a 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.35);
+}
+.rank-pink {
+  background: linear-gradient(90deg, #ff80ab 0%, #ff4081 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.32);
+}
+.rank-gold,
+.rank-s,
+.rank-splus {
+  background: linear-gradient(90deg, #fff176 0%, #ffeb3b 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.28);
+}
+.rank-default {
+  background: linear-gradient(90deg, #8ed1ff 0%, #5aa9ff 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.18);
+}
 .song-card-ach {
   font-weight: 600;
   color: #f3f4f6;

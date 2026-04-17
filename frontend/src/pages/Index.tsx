@@ -126,6 +126,27 @@ function recategorize(data: B50Data, dict: SongsDict): B50Data {
   return out
 }
 
+function rankClass(rank: string | number | null | undefined): string {
+  if (rank === null || rank === undefined || rank === '') return 'rank-default'
+  const r = String(rank).toUpperCase().trim()
+  if (r === '3S+' || r === '3S') return 'rank-3s'
+  if (r === '3A' || r === '2A' || r === 'A') return 'rank-pink'
+  // treat 2S/2S+ and S/S+ as the default gold/yellow ranks per request
+  if (r === '2S+' || r === '2S' || r === 'S+' || r === 'S') return 'rank-gold'
+  return 'rank-default'
+}
+
+// Return a solid fallback text color for a given rank string.
+function rankSolidColor(rank: string | number | null | undefined): string {
+  if (rank === null || rank === undefined || String(rank).trim() === '') return '#8ed1ff'
+  const r = String(rank).toUpperCase().trim()
+  if (r === '3S+' || r === '3S') return '#ff8a2b' // orange-yellow for 3S variants
+  if (r === '3A' || r === '2A' || r === 'A') return '#ff4da6' // pink for A tiers
+  // treat 2S/2S+ and S/S+ as the default gold/yellow ranks per request
+  if (r === '2S+' || r === '2S' || r === 'S+' || r === 'S') return '#fde68a'
+  return '#8ed1ff' // fallback light-blue
+}
+
 interface SongCellProps {
   song: Song | null
   songDict: SongsDict
@@ -146,7 +167,7 @@ function SongCell({ song, songDict }: SongCellProps) {
       <div className="song-card-info">
         <div className="song-card-title" title={song.song_name}>{displayTitle}</div>
         <div className="song-card-meta">
-          <span className="song-card-rank">{song.rank}</span>
+          <span className={`song-card-rank ${rankClass(song.rank)}`}>{song.rank}</span>
           <span className="song-card-ach">{parseFloat(String(song.achievement)).toFixed(4)}%</span>
           <span className="song-card-diff">{parseFloat(String(song.chart_difficulty)).toFixed(1)}</span>
         </div>
@@ -183,7 +204,7 @@ function SongTable({ songs, idPrefix }: SongTableProps) {
               <TableCell className="text-muted-foreground text-xs w-8">{i + 1}</TableCell>
               <TableCell className="font-medium max-w-[360px] truncate">{s.song_name}</TableCell>
               <TableCell className="w-28">{s.difficulty_type}</TableCell>
-              <TableCell className="w-20">{s.rank}</TableCell>
+              <TableCell className="w-20"><span className={`song-card-rank ${rankClass(s.rank)}`}>{s.rank}</span></TableCell>
               <TableCell className="w-36">{parseFloat(String(s.achievement)).toFixed(4)}%</TableCell>
               <TableCell className="w-28 text-center">{parseFloat(String(s.chart_difficulty)).toFixed(1)}</TableCell>
               <TableCell className="font-semibold text-primary w-36 text-center">{s.calculated_rating}</TableCell>
@@ -404,6 +425,70 @@ export default function Index() {
 
       container.appendChild(clone)
       document.body.appendChild(container)
+
+      // For the print/export clone, temporarily set achievement and rank
+      // text back to default colors so the exported image uses the
+      // expected readable colors (avoid relying on background-clip:text
+      // which html2canvas can miss). Default rank color: #fde68a.
+      try {
+        const DEFAULT_TEXT_COLOR = '#ffffff'
+        const DEFAULT_RANK_COLOR = '#fde68a'
+        // achievement percentage values to white for contrast
+        Array.from(clone.querySelectorAll('.song-card-ach')).forEach((n) => {
+          try {
+            const el = n as HTMLElement
+            el.style.color = DEFAULT_TEXT_COLOR
+            el.style.backgroundImage = 'none'
+            el.style.backgroundClip = 'unset'
+            ;(el.style as any).webkitBackgroundClip = 'unset'
+            ;(el.style as any).webkitTextFillColor = DEFAULT_TEXT_COLOR
+          } catch (e) { /* ignore per-node errors */ }
+        })
+        // rank pills: copy computed styles from the original elements so
+        // the print/export clone visually matches the main screen.
+        try {
+          const origRanks = Array.from(el.querySelectorAll('.song-card-rank')) as HTMLElement[]
+          const cloneRanks = Array.from(clone.querySelectorAll('.song-card-rank')) as HTMLElement[]
+          for (let i = 0; i < cloneRanks.length; i++) {
+            const o = origRanks[i]
+            const cNode = cloneRanks[i]
+            if (!o || !cNode) continue
+            try {
+              const oc = window.getComputedStyle(o)
+              // Remove CSS background (gradients, images) from the clone so
+              // the exported image uses a solid, reliable text color.
+              cNode.style.backgroundImage = 'none'
+              cNode.style.backgroundClip = 'unset'
+              ;(cNode.style as any).webkitBackgroundClip = ''
+              ;(cNode.style as any).webkitTextFillColor = ''
+
+              // Use the project's rank->solid-color mapping for the clone
+              const rankText = (o.textContent || cNode.textContent || '').trim()
+              cNode.style.color = rankSolidColor(rankText)
+
+              // Preserve other readable properties
+              cNode.style.textShadow = oc.textShadow || ''
+              cNode.style.fontWeight = oc.fontWeight || ''
+              cNode.style.fontSize = oc.fontSize || ''
+              cNode.style.padding = oc.padding || ''
+            } catch (e) { /* ignore per-node errors */ }
+          }
+        } catch (e) { /* ignore rank-copy errors */ }
+        // Also reset any table cells that look like achievement values (ending with %)
+        Array.from(clone.querySelectorAll('td, th')).forEach((cell) => {
+          try {
+            const el = cell as HTMLElement
+            if ((el.textContent || '').trim().endsWith('%')) {
+              el.style.color = DEFAULT_TEXT_COLOR
+              el.style.backgroundImage = 'none'
+              el.style.backgroundClip = 'unset'
+              ;(el.style as any).webkitTextFillColor = DEFAULT_TEXT_COLOR
+            }
+          } catch (e) { /* ignore per-cell errors */ }
+        })
+      } catch (e) {
+        console.warn('Failed to adjust colors in print clone:', e)
+      }
 
       const w = clone.scrollWidth
       const h = clone.scrollHeight
