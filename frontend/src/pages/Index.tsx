@@ -170,19 +170,22 @@ function SongCell({ song, songDict }: SongCellProps) {
     <div className={`song-card ${diffClass(song.difficulty_type)}`}>
       <div className="song-card-art" style={info.image_url ? { backgroundImage: `url(${info.image_url})` } : undefined}>
         {chartTag && <span className={`song-tag ${chartTagClass}`}>{chartTag}</span>}
-        <div className="song-card-rating-wrap">
-          {clearIconSrc && (
-            <img src={clearIconSrc} className="song-clear-inline" alt={String(song.clear_type)} />
-          )}
-          <div className="song-card-rating">{song.calculated_rating}</div>
-        </div>
+        {clearIconSrc && (
+          <img src={clearIconSrc} className="song-clear-badge" alt={String(song.clear_type)} />
+        )}
       </div>
       <div className="song-card-info">
         <div className="song-card-title" title={song.song_name}>{displayTitle}</div>
         <div className="song-card-meta">
           <span className={`song-card-rank ${rankClass(song.rank)}`}>{song.rank}</span>
           <span className="song-card-ach">{parseFloat(String(song.achievement)).toFixed(4)}%</span>
-          <span className="song-card-diff">{parseFloat(String(song.chart_difficulty)).toFixed(1)}</span>
+        </div>
+        {/* Right side of info strip: stacked rating + chart constant */}
+        <div className="song-card-const-group">
+          <div className="song-card-rating">
+            <span className="song-card-rating-value">{song.calculated_rating}</span>
+            <span className="song-card-diff">{parseFloat(String(song.chart_difficulty)).toFixed(1)}</span>
+          </div>
         </div>
       </div>
     </div>

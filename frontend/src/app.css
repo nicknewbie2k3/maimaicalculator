@@ -205,17 +205,7 @@
   z-index: 10;
 }
 
-.song-card-rating {
-  font-weight: 900;
-  font-size: 1rem;
-  color: #111;
-  background: linear-gradient(135deg, #fff 0%, #e5e7eb 100%);
-  padding: 6px 10px;
-  border-radius: 8px;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.45);
-  letter-spacing: 0.2px;
-  display: inline-block;
-}
+
 
 .song-tag {
   position: absolute;
@@ -274,9 +264,44 @@
 .song-card-meta {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 4px;
   font-size: 0.7rem;
+  line-height: 1;
+  padding-right: 72px; /* reserve space for rating+constant on the right */
+}
+.song-card-const-group {
+  position: absolute;
+  right: 0px; /* move back slightly inside the info strip */
+  top: 50%; /* vertically center in info area */
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  padding: 0;
+  border-radius: 6px;
+  z-index: 16;
+  min-width: 40px;
+  text-align: center;
+}
+.song-card-rating {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  color: #fff;
+  background: transparent; /* no background per request */
+  padding: 2px 6px;
+  border-radius: 4px;
+  box-shadow: none;
+  letter-spacing: 0.2px;
+  line-height: 1;
+}
+
+.song-card-rating-value {
+  font-size: 1.05rem;
   line-height: 1;
 }
 .song-card-rank {
@@ -286,13 +311,6 @@
   text-shadow: 0 1px 2px rgba(0,0,0,0.8);
   letter-spacing: 0.5px;
 }
-
-/* Rank color mappings per user request:
-   - 3S+/3S: orange-yellow gradient
-   - 3A/2A/A: pink gradient
-   - SS+,SS,S+,S: default (gold/yellow) gradient
-   - rest: light blue gradient
-*/
 .rank-3s,
 .rank-3splus {
   background: linear-gradient(90deg, #ff7a00 0%, #ffd54a 100%);
@@ -329,17 +347,26 @@
   text-shadow: 0 1px 2px rgba(0,0,0,0.18);
 }
 .song-card-ach {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
   font-weight: 600;
   color: #f3f4f6;
   text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+  white-space: nowrap;
+  text-align: center;
+  z-index: 2;
 }
 .song-card-diff {
   font-weight: 700;
   color: #fff;
-  background: rgba(0,0,0,0.45);
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 0.85rem;
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  font-size: 0.6rem;
+  display: block;
+  margin-top: 2px;
 }
 
 .old-chart-row { background-color: rgba(0,123,255,0.05) !important; }
@@ -573,6 +600,19 @@
   border-radius: 6px;
 }
 
+/* Artwork clear badge (bottom-right) */
+.song-clear-badge {
+  position: absolute;
+  right: 6px;
+  bottom: 8px; /* moved slightly above the rating box */
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
+  filter: drop-shadow(0 3px 8px rgba(0,0,0,0.55));
+  border-radius: 8px;
+  z-index: 18;
+}
+
 /* Ensure icons remain visible on narrow/mobile viewports */
 @media (max-width: 640px) {
   .song-clear-inline {
@@ -582,6 +622,12 @@
   .table-clear-icon {
     width: 40px;
     height: 40px;
+  }
+  .song-clear-badge {
+    width: 40px;
+    height: 40px;
+    right: 6px;
+    bottom: 8px;
   }
 }
 
