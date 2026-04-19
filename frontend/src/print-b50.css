@@ -1,0 +1,248 @@
+/* print-b50.css
+   Export/print fallbacks to improve fidelity of html2canvas exports.
+   - Disable `backdrop-filter` (html2canvas doesn't render it reliably)
+   - Provide solid translucent backgrounds as a fallback
+   - Ensure background images and sizes are preserved
+   - Add !important where necessary so these rules survive ordering
+*/
+
+/* Apply to both print and exported screenshots */
+@media print, screen {
+  /* Replace backdrop-filter based translucency with solid translucent backgrounds (scoped to export clone) */
+  .b50-print-clone .song-card-info,
+  .b50-print-clone .semi-transparent {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    background-color: rgba(0,0,0,0.48) !important;
+    color: #fff !important;
+  }
+
+  /* Ensure art images cover the area consistently in exports */
+  .b50-print-clone .song-card-art {
+    background-size: cover !important;
+    background-position: center !important;
+    background-repeat: no-repeat !important;
+    background-clip: border-box !important;
+  }
+
+  /* Re-apply the subtle overlay used in the live UI so exported images keep the same tone */
+  .b50-print-clone .song-card-art::after {
+    content: '' !important;
+    position: absolute !important;
+    inset: 0 !important;
+    background: linear-gradient(180deg, rgba(0,0,0,0.06) 0%, rgba(0,0,0,0.00) 40%) !important;
+    pointer-events: none !important;
+  }
+
+  /* Ensure card shadows and clipping remain visible in exported output */
+  .b50-print-clone .song-card {
+    background-clip: padding-box !important;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4) !important;
+  }
+
+  /* Make the info strip gradient fallback explicit for exports */
+  .b50-print-clone .song-card-info::before {
+    background: linear-gradient(180deg, rgba(0,0,0,0.50) 0%, rgba(0,0,0,0.50) 36%, rgba(0,0,0,0.36) 54%, rgba(0,0,0,0.00) 100%) !important;
+  }
+
+  /* Ensure text gradients don't disappear; script already provides a solid color fallback,
+     but prevent user-agent quirks by clearing webkit fill when necessary. */
+  .b50-print-clone .song-card-rank,
+  .b50-print-clone .rank-3s,
+  .b50-print-clone .rank-3splus,
+  .b50-print-clone .rank-pink,
+  .b50-print-clone .rank-gold,
+  .b50-print-clone .rank-s,
+  .b50-print-clone .rank-splus,
+  .b50-print-clone .rank-default {
+    -webkit-text-fill-color: unset !important;
+    -webkit-background-clip: initial !important;
+    background-image: none !important;
+    color: inherit !important;
+  }
+
+  /* Totals overlay */
+  .b50-print-clone .b50-total::before {
+    background: rgba(0,0,0,0.28) !important;
+  }
+
+  /* Semi-transparent container inputs should remain legible */
+  .b50-print-clone .semi-transparent input,
+  .b50-print-clone .semi-transparent textarea,
+  .b50-print-clone .semi-transparent select,
+  .b50-print-clone .semi-transparent .input,
+  .b50-print-clone .semi-transparent .select-trigger {
+    background-color: #ffffff !important;
+    color: rgba(0,0,0,0.95) !important;
+    border-color: rgba(0,0,0,0.12) !important;
+    box-shadow: none !important;
+  }
+}
+
+/* Force exact layout and sizing for exported B50 cells so html2canvas
+   output matches the live grid. These rules intentionally use !important
+   to override computed-style copying and user-agent quirks during export. */
+.b50-print-clone .song-card-info {
+  position: relative !important;
+  padding: 8px 7px 6px !important;
+  padding-right: 60px !important;
+  background-color: rgba(0,0,0,0.48) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  color: #fff !important;
+  overflow: visible !important;
+}
+
+.b50-print-clone .song-card-title {
+  font-weight: 800 !important;
+  font-size: 0.60rem !important;
+  line-height: 1.15 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  margin-bottom: 2px !important;
+  position: relative !important;
+  z-index: 1 !important;
+}
+
+.b50-print-clone .song-card-meta {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  font-size: 0.7rem !important;
+  line-height: 1 !important;
+  padding-right: 60px !important;
+}
+
+/* Ensure the rating/constant stack is clipped inside the info strip */
+.b50-print-clone .song-card-const-group {
+  position: absolute !important;
+  right: 0px !important;
+  top: auto !important;
+  bottom: 8px !important;
+  transform: none !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  gap: 4px !important;
+  background: transparent !important;
+  padding: 0 !important;
+  border-radius: 6px !important;
+  z-index: 16 !important;
+  min-width: 40px !important;
+  text-align: center !important;
+}
+
+.b50-print-clone .song-card-rating {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-weight: 900 !important;
+  color: #fff !important;
+  background: transparent !important;
+  padding: 2px 6px !important;
+  border-radius: 4px !important;
+  box-shadow: none !important;
+  letter-spacing: 0.2px !important;
+  line-height: 1 !important;
+}
+
+.b50-print-clone .song-card-rating-value {
+  font-size: 1.05rem !important;
+  line-height: 1 !important;
+  display: inline-block !important;
+}
+
+.b50-print-clone .song-card-diff {
+  font-size: 0.6rem !important;
+  display: block !important;
+  margin-top: 2px !important;
+}
+
+.b50-print-clone .song-card-ach-wrapper { z-index: 6 !important; }
+.b50-print-clone .song-card-ach-inline {
+  margin-left: 0 !important;
+  font-size: 0.55rem !important;
+  font-weight: 300 !important;
+  color: #f3f4f6 !important;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.8) !important;
+  white-space: nowrap !important;
+  align-self: center !important;
+  display: inline-block !important;
+  transform: translateY(0) !important;
+  line-height: 1.25 !important;
+}
+
+/* Prevent gradient text clipping issues in exports: fall back to solid colors */
+.b50-print-clone .song-card-rank,
+.b50-print-clone .rank-3s,
+.b50-print-clone .rank-3splus,
+.b50-print-clone .rank-pink,
+.b50-print-clone .rank-gold,
+.b50-print-clone .rank-s,
+.b50-print-clone .rank-splus,
+.b50-print-clone .rank-default {
+  background-image: none !important;
+  -webkit-background-clip: unset !important;
+  background-clip: unset !important;
+  -webkit-text-fill-color: unset !important;
+  color: inherit !important;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.35) !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  margin-right: 6px !important;
+  position: relative !important;
+  z-index: 24 !important;
+  transform: translateY(0.14rem) !important;
+}
+
+/* Rank image sizing for export clone */
+.b50-print-clone .song-card-rank img.rank-image {
+  height: 0.8rem !important;
+  width: 1.6rem !important;
+  display: block !important;
+  flex: 0 0 auto !important;
+  min-width: 2.0rem !important;
+  vertical-align: middle !important;
+  object-fit: contain !important;
+  margin-right: 6px !important;
+  margin-bottom: 7px !important;
+}
+
+/* Centered rank overlay in export/print clone */
+.b50-print-clone .song-card .rank-image-center {
+  /* removed: overlay image is no longer used */
+}
+.b50-print-clone .table-fixed .song-card .rank-image-center {
+  /* removed: overlay image is no longer used */
+}
+.b50-print-clone .table-fixed .song-card-rank img.rank-image {
+  height: 1.2rem !important;
+  width: auto !important;
+  flex: 0 0 auto !important;
+  min-width: 1.2rem !important;
+}
+
+/* Background-image rank badge fallback for export clone */
+.b50-print-clone .song-card-rank.rankimg {
+  color: transparent !important;
+  text-indent: 100% !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  display: inline-block !important;
+  width: 1.6rem !important;
+  height: 1.6rem !important;
+  vertical-align: middle !important;
+  background-size: contain !important;
+  background-position: center !important;
+  background-repeat: no-repeat !important;
+}
+.b50-print-clone .table-fixed .song-card-rank.rankimg {
+  width: 1.1rem !important;
+  height: 1.1rem !important;
+}
+
+/* Keep corners and shadows visible in renderers that ignore background-clip */
+.b50-print-clone .song-card { border-radius: 12px !important; overflow: hidden !important; }

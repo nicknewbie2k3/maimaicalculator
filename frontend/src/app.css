@@ -3,6 +3,7 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
+@import "./print-b50.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -165,7 +166,6 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  border-radius: 10px;
   overflow: hidden;
   /* remove inset highlight (creates a thin visible line at the inner edge) */
   box-shadow: 0 4px 12px rgba(0,0,0,0.4);
@@ -226,11 +226,13 @@
 .song-card-info {
   position: relative;
   padding: 8px 7px 6px;
+  padding-right: 60px; /* reserve space on the right for rating+constant */
   /* keep the info area slightly translucent and blurred */
   background: rgba(0,0,0,0.28);
   backdrop-filter: blur(6px);
   color: #fff;
   border-top: none; /* remove hard 1px border to avoid a seam */
+  overflow: visible; /* allow child badges to overlap the art/info areas */
 }
 .song-card-info::before {
   content: '';
@@ -253,7 +255,7 @@
 .song-card-info > * { position: relative; z-index: 1; }
 .song-card-title {
   font-weight: 800;
-  font-size: 0.72rem;
+  font-size: 0.60rem;
   line-height: 1.15;
   white-space: nowrap;
   overflow: hidden;
@@ -262,12 +264,26 @@
   margin-bottom: 2px;
 }
 .song-card-meta {
+  position: relative;
   display: flex;
-  align-items: center;
-  gap: 4px;
+  align-items: center; /* align items vertically centered on second line */
+  gap: 8px;
   font-size: 0.7rem;
   line-height: 1;
-  padding-right: 72px; /* reserve space for rating+constant on the right */
+  padding-right: 60px; /* match info-strip padding */
+}
+
+.song-card-ach-wrapper {
+  position: absolute;
+  left: 8px; /* align to inner left edge of the cell */
+  right: 8px; /* aligned to the inner right edge of the cell */
+  bottom: 0px; /* align near the bottom line of the info strip */
+  top: 0px;
+  display: flex;
+  justify-content: center; /* horizontal centering within the left/right bounds */
+  align-items: flex-end; /* bottom align text inside wrapper */
+  pointer-events: none; /* don't block clicks */
+  z-index: 6;
 }
 .song-card-const-group {
   position: absolute;
@@ -310,6 +326,62 @@
   color: #fde68a;
   text-shadow: 0 1px 2px rgba(0,0,0,0.8);
   letter-spacing: 0.5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 8px;
+  position: relative;
+  z-index: 22;
+    transform: translateY(0.00rem); /* nudge very slightly down so badge sits lower in the info strip */
+}
+
+/* Rank images (replace textual rank with image badge) */
+.song-card-rank img.rank-image {
+  height: 0.8rem;
+  width: 0.8rem;
+  display: block;
+  flex: 0 0 auto;
+  min-width: 2.0rem;
+  vertical-align: middle;
+  object-fit: contain;
+}
+
+/* Centered rank overlay (force-render test) */
+.song-card .rank-image-center {
+  /* removed: overlay image is no longer used */
+}
+.table-fixed .song-card .rank-image-center {
+  /* removed: overlay image is no longer used */
+}
+.table-fixed .song-card-rank img.rank-image {
+  height: 1.2rem;
+  width: 1.2rem;
+  flex: 0 0 auto;
+  min-width: 1.2rem;
+}
+
+/* Background-image rank badge fallback (when using inline background) */
+.song-card-rank.rankimg {
+  color: transparent; /* hide textual rank when image badge is used */
+  text-indent: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.table-fixed .song-card-rank.rankimg {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+/* Ensure rank image badges are not clipped by text-gradient styles */
+.song-card-rank.rankimg {
+  -webkit-background-clip: border-box !important;
+  background-clip: border-box !important;
+  -webkit-text-fill-color: initial !important;
+  background-size: contain !important;
+  background-position: center !important;
+  background-repeat: no-repeat !important;
+  display: inline-block !important;
+  vertical-align: middle !important;
 }
 .rank-3s,
 .rank-3splus {
@@ -349,14 +421,27 @@
 .song-card-ach {
   position: absolute;
   left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
+  bottom: 20%; /* place bottom of achievement 40% up from wrapper bottom */
+  transform: translateX(-50%);
+  font-size: 0.68rem; /* slightly smaller per request */
   font-weight: 600;
   color: #f3f4f6;
   text-shadow: 0 1px 2px rgba(0,0,0,0.8);
   white-space: nowrap;
   text-align: center;
-  z-index: 2;
+  line-height: 1; /* keep baseline consistent */
+}
+.song-card-ach-inline {
+  margin-left: 0;
+  font-size: 0.55rem;
+  font-weight: 400;
+  color: #f3f4f6;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+  white-space: nowrap;
+  align-self: center;
+  display: inline-block;
+  transform: translateY(0);
+  line-height: 1.25;
 }
 .song-card-diff {
   font-weight: 700;

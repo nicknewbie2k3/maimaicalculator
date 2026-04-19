@@ -154,6 +154,44 @@ function rankSolidColor(rank: string | number | null | undefined): string {
   return '#8ed1ff' // fallback light-blue
 }
 
+// Map rank text to grade image filenames (stored in Django static image folder)
+// Rank icon mapping (use the same static paths approach as `CLEAR_ICONS`)
+const RANK_ICONS: Record<string, string> = {
+  'D': '/static/image/grade_d.png',
+  'C': '/static/image/grade_c.png',
+  'B': '/static/image/grade_b.png',
+  '2B': '/static/image/grade_bb.png',
+  '3B': '/static/image/grade_bbb.png',
+  'A': '/static/image/grade_a.png',
+  '2A': '/static/image/grade_aa.png',
+  '3A': '/static/image/grade_aaa.png',
+  'S': '/static/image/grade_s.png',
+  'S+': '/static/image/grade_s_plus.png',
+  '2S': '/static/image/grade_ss.png',
+  '2S+': '/static/image/grade_ss_plus.png',
+  '3S': '/static/image/grade_sss.png',
+  '3S+': '/static/image/grade_sss_plus.png',
+}
+
+function rankImageFile(rank: string | number | null | undefined): string | null {
+  if (rank === null || rank === undefined) return null
+  const r = String(rank).toUpperCase().trim()
+  return RANK_ICONS[r] || null
+}
+
+function renderRankElement(rank: string | number | null | undefined) {
+  const src = rankImageFile(rank)
+  const cls = `song-card-rank ${rankClass(rank)}`
+  if (src) {
+    return (
+      <span className={cls} aria-label={String(rank)} title={String(rank)}>
+        <img src={src} alt={String(rank)} className="rank-image" />
+      </span>
+    )
+  }
+  return <span className={cls}>{rank}</span>
+}
+
 interface SongCellProps {
   song: Song | null
   songDict: SongsDict
@@ -168,6 +206,7 @@ function SongCell({ song, songDict }: SongCellProps) {
   const clearIconSrc = song.clear_type ? (CLEAR_ICONS[song.clear_type] || null) : null
   return (
     <div className={`song-card ${diffClass(song.difficulty_type)}`}>
+      
       <div className="song-card-art" style={info.image_url ? { backgroundImage: `url(${info.image_url})` } : undefined}>
         {chartTag && <span className={`song-tag ${chartTagClass}`}>{chartTag}</span>}
         {clearIconSrc && (
@@ -177,8 +216,8 @@ function SongCell({ song, songDict }: SongCellProps) {
       <div className="song-card-info">
         <div className="song-card-title" title={song.song_name}>{displayTitle}</div>
         <div className="song-card-meta">
-          <span className={`song-card-rank ${rankClass(song.rank)}`}>{song.rank}</span>
-          <span className="song-card-ach">{parseFloat(String(song.achievement)).toFixed(4)}%</span>
+          {renderRankElement(song.rank)}
+          <span className="song-card-ach-inline">{parseFloat(String(song.achievement)).toFixed(4)}%</span>
         </div>
         {/* Right side of info strip: stacked rating + chart constant */}
         <div className="song-card-const-group">
@@ -226,7 +265,7 @@ function SongTable({ songs, idPrefix }: SongTableProps) {
               </TableCell>
               <TableCell className="font-medium max-w-[320px] truncate">{s.song_name}</TableCell>
               <TableCell className="w-28">{s.difficulty_type}</TableCell>
-              <TableCell className="w-20"><span className={`song-card-rank ${rankClass(s.rank)}`}>{s.rank}</span></TableCell>
+              <TableCell className="w-20">{renderRankElement(s.rank)}</TableCell>
               <TableCell className="w-36">{parseFloat(String(s.achievement)).toFixed(4)}%</TableCell>
               <TableCell className="w-28 text-center">{parseFloat(String(s.chart_difficulty)).toFixed(1)}</TableCell>
               <TableCell className="font-semibold text-primary w-36 text-center">{s.calculated_rating}</TableCell>
@@ -423,6 +462,7 @@ export default function Index() {
     try {
       // create offscreen container
       container = document.createElement('div')
+      container.classList.add('b50-print-clone')
       container.style.position = 'fixed'
       container.style.left = '-100000px'
       container.style.top = '0'
@@ -448,73 +488,103 @@ export default function Index() {
       container.appendChild(clone)
       document.body.appendChild(container)
 
-      // For the print/export clone, temporarily set achievement and rank
-      // text back to default colors so the exported image uses the
-      // expected readable colors (avoid relying on background-clip:text
-      // which html2canvas can miss). Default rank color: #fde68a.
+      // Copy a set of important computed style properties from the live
+      // grid into the clone. This greatly improves fidelity for the
+      // exported image without attempting to copy every single CSS
+      // property (which can break layout when applied verbatim).
       try {
+        // Copy a conservative set of visual properties. Intentionally omit
+        // font-size/padding/margin/position-related properties so the
+        // `print-b50.css` stylesheet can enforce consistent exported layout
+        // (inline styles copied from computed styles would otherwise override it).
+        const propsToCopy = [
+          'color', 'background', 'background-image', 'background-color', 'background-size', 'background-position', 'background-clip', '-webkit-background-clip', '-webkit-text-fill-color',
+          'text-shadow', 'letter-spacing',
+          'border',
+          'display', 'align-items', 'justify-content', 'box-sizing', 'white-space', 'overflow', 'text-align', 'vertical-align', 'opacity', 'flex-direction', 'flex-wrap', 'gap'
+        ]
+
+        const origAll = Array.from(el.querySelectorAll('*')) as HTMLElement[]
+        const cloneAll = Array.from(clone.querySelectorAll('*')) as HTMLElement[]
+        const len = Math.min(origAll.length, cloneAll.length)
+        for (let i = 0; i < len; i++) {
+          try {
+            const o = origAll[i]
+            const c = cloneAll[i]
+            const oc = window.getComputedStyle(o)
+            for (const p of propsToCopy) {
+              const val = oc.getPropertyValue(p)
+              if (val && val !== 'initial' && val !== 'inherit') {
+                c.style.setProperty(p, val, oc.getPropertyPriority(p))
+              }
+            }
+          } catch (e) { /* ignore per-node copy errors */ }
+        }
+
+        // As a robust fallback, ensure achievement text remains readable and
+        // try to preserve rank visuals where possible. html2canvas has
+        // well-known limits for background-clip:text so we still fall back
+        // to a solid color when necessary.
         const DEFAULT_TEXT_COLOR = '#ffffff'
-        const DEFAULT_RANK_COLOR = '#fde68a'
-        // achievement percentage values to white for contrast
         Array.from(clone.querySelectorAll('.song-card-ach')).forEach((n) => {
           try {
-            const el = n as HTMLElement
-            el.style.color = DEFAULT_TEXT_COLOR
-            el.style.backgroundImage = 'none'
-            el.style.backgroundClip = 'unset'
-            ;(el.style as any).webkitBackgroundClip = 'unset'
-            ;(el.style as any).webkitTextFillColor = DEFAULT_TEXT_COLOR
+            const elA = n as HTMLElement
+            elA.style.color = DEFAULT_TEXT_COLOR
+            elA.style.backgroundImage = 'none'
+            elA.style.backgroundClip = 'unset'
+            ;(elA.style as any).webkitBackgroundClip = 'unset'
+            ;(elA.style as any).webkitTextFillColor = DEFAULT_TEXT_COLOR
           } catch (e) { /* ignore per-node errors */ }
         })
-        // rank pills: copy computed styles from the original elements so
-        // the print/export clone visually matches the main screen.
-        try {
-          const origRanks = Array.from(el.querySelectorAll('.song-card-rank')) as HTMLElement[]
-          const cloneRanks = Array.from(clone.querySelectorAll('.song-card-rank')) as HTMLElement[]
-          for (let i = 0; i < cloneRanks.length; i++) {
-            const o = origRanks[i]
-            const cNode = cloneRanks[i]
-            if (!o || !cNode) continue
-            try {
-              const oc = window.getComputedStyle(o)
-              // Remove CSS background (gradients, images) from the clone so
-              // the exported image uses a solid, reliable text color.
+
+        const origRanks = Array.from(el.querySelectorAll('.song-card-rank')) as HTMLElement[]
+        const cloneRanks = Array.from(clone.querySelectorAll('.song-card-rank')) as HTMLElement[]
+        for (let i = 0; i < cloneRanks.length; i++) {
+          const o = origRanks[i]
+          const cNode = cloneRanks[i]
+          if (!o || !cNode) continue
+          try {
+            const oc = window.getComputedStyle(o)
+            const bgImage = oc.getPropertyValue('background-image') || ''
+            const hasTextGradient = /gradient|linear-gradient|radial-gradient/i.test(bgImage)
+            if (!hasTextGradient) {
+              cNode.style.backgroundImage = oc.backgroundImage || ''
+              cNode.style.backgroundClip = oc.backgroundClip || ''
+              ;(cNode.style as any).webkitBackgroundClip = (oc as any).webkitBackgroundClip || ''
+              ;(cNode.style as any).webkitTextFillColor = (oc as any).webkitTextFillColor || ''
+            } else {
+              const rankText = (o.textContent || cNode.textContent || '').trim()
               cNode.style.backgroundImage = 'none'
               cNode.style.backgroundClip = 'unset'
               ;(cNode.style as any).webkitBackgroundClip = ''
               ;(cNode.style as any).webkitTextFillColor = ''
-
-              // Use the project's rank->solid-color mapping for the clone
-              const rankText = (o.textContent || cNode.textContent || '').trim()
               cNode.style.color = rankSolidColor(rankText)
-
-              // Preserve other readable properties
-              cNode.style.textShadow = oc.textShadow || ''
-              cNode.style.fontWeight = oc.fontWeight || ''
-              cNode.style.fontSize = oc.fontSize || ''
-              cNode.style.padding = oc.padding || ''
-            } catch (e) { /* ignore per-node errors */ }
-          }
-        } catch (e) { /* ignore rank-copy errors */ }
-        // Also reset any table cells that look like achievement values (ending with %)
-        Array.from(clone.querySelectorAll('td, th')).forEach((cell) => {
-          try {
-            const el = cell as HTMLElement
-            if ((el.textContent || '').trim().endsWith('%')) {
-              el.style.color = DEFAULT_TEXT_COLOR
-              el.style.backgroundImage = 'none'
-              el.style.backgroundClip = 'unset'
-              ;(el.style as any).webkitTextFillColor = DEFAULT_TEXT_COLOR
             }
-          } catch (e) { /* ignore per-cell errors */ }
-        })
+            cNode.style.textShadow = oc.textShadow || ''
+            cNode.style.fontWeight = oc.fontWeight || ''
+            cNode.style.fontSize = oc.fontSize || ''
+            cNode.style.padding = oc.padding || ''
+          } catch (e) { /* ignore per-node errors */ }
+        }
       } catch (e) {
-        console.warn('Failed to adjust colors in print clone:', e)
+        console.warn('Failed to copy computed styles for print clone:', e)
       }
 
       const w = clone.scrollWidth
       const h = clone.scrollHeight
       const scale = Math.min(2, MAX / Math.max(w, h))
+
+      // Ensure fonts are available and the clone uses the same font-family
+      // This improves text metrics and truncation fidelity in html2canvas output.
+      try {
+        if ((document as any).fonts && (document as any).fonts.ready) {
+          // await fonts to avoid layout with fallback fonts
+          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+          // @ts-ignore
+          await (document as any).fonts.ready
+        }
+      } catch (e) { /* ignore font loading errors */ }
+      try { clone.style.fontFamily = window.getComputedStyle(document.documentElement).fontFamily || '' } catch (e) { /* ignore */ }
 
       const bg = window.getComputedStyle(el).backgroundColor || '#0b1020'
       const canvas = await html2canvas(clone, {
