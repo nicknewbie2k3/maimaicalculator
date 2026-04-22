@@ -680,7 +680,9 @@ export default function Index() {
           modal.style.background = '#0b1020'
           modal.style.padding = '12px'
           modal.style.borderRadius = '8px'
-          modal.style.maxWidth = 'calc(100% - 40px)'
+          // Make the modal wide on mobile so the preview image can scale up
+          modal.style.width = '90vw'
+          modal.style.maxWidth = '1000px'
           modal.style.maxHeight = 'calc(100% - 120px)'
           modal.style.overflow = 'auto'
           modal.style.boxShadow = '0 8px 20px rgba(0,0,0,0.6)'
@@ -690,7 +692,9 @@ export default function Index() {
 
           const img = document.createElement('img') as HTMLImageElement
           img.src = url
-          img.style.maxWidth = '100%'
+          // Force the preview image to fill the modal width so it is not tiny
+          img.style.width = '100%'
+          img.style.height = 'auto'
           img.style.maxHeight = 'calc(100vh - 200px)'
           img.style.display = 'block'
           img.style.margin = '0 auto'
