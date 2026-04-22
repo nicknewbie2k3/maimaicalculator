@@ -472,25 +472,9 @@ export default function Index() {
       container.style.overflow = 'visible'
       container.style.visibility = 'visible'
       container.style.zIndex = '2147483647'
-
-      // Scoped override: force desktop grid/layout inside the clone so
-      // media queries based on the phone viewport don't collapse it.
-      try {
-        const overrideStyle = document.createElement('style')
-        overrideStyle.type = 'text/css'
-        overrideStyle.textContent = `
-          .b50-print-clone .b50-grid {
-            grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
-            gap: 10px !important;
-            padding: 14px !important;
-            max-width: none !important;
-          }
-          .b50-print-clone .b50-stage { width: ${FIXED_VIEWPORT_WIDTH}px !important; }
-          .b50-print-clone .song-card { box-sizing: border-box !important; }
-          .b50-print-clone * { background-attachment: scroll !important; }
-        `
-        container.appendChild(overrideStyle)
-      } catch (e) { /* ignore style injection errors */ }
+      // Do NOT force layout styles here; preserve live styling and instead
+      // crop the final canvas to the stage/grid bounding box so exported
+      // images match the live UI without mutating layout.
 
       // clone the grid and sanitize styles that may vary per user
       const clone = el.cloneNode(true) as HTMLElement
@@ -634,7 +618,44 @@ export default function Index() {
         windowHeight: h,
       })
 
-      const dataUrl = canvas.toDataURL('image/png')
+      // Crop the generated canvas to a bounding box that covers the
+      // visible stage: header (first child) down to the bottom of the
+      // last `.b50-grid` so both B35 and B15 sections are included.
+      let dataUrl: string
+      try {
+        const cloneRect = clone.getBoundingClientRect()
+        const firstChild = clone.firstElementChild as HTMLElement | null
+        const gridNodes = Array.from(clone.querySelectorAll('.b50-grid')) as HTMLElement[]
+
+        const startY = firstChild ? Math.max(0, firstChild.getBoundingClientRect().top - cloneRect.top) : 0
+        let endY = clone.scrollHeight
+        if (gridNodes.length > 0) {
+          const lastGrid = gridNodes[gridNodes.length - 1]
+          const lastBottom = lastGrid.getBoundingClientRect().bottom - cloneRect.top
+          endY = Math.min(clone.scrollHeight, Math.max(endY, lastBottom))
+        }
+
+        const safeStart = Math.max(0, Math.min(startY, clone.scrollHeight))
+        const safeEnd = Math.max(safeStart, Math.min(endY, clone.scrollHeight))
+
+        const sx = 0
+        const sy = Math.round(safeStart * scale)
+        const sw = Math.round(canvas.width)
+        const sh = Math.round((safeEnd - safeStart) * scale)
+
+        if (sh > 0 && sh <= canvas.height) {
+          const cropped = document.createElement('canvas')
+          cropped.width = sw
+          cropped.height = sh
+          const ctx = cropped.getContext('2d')
+          if (ctx) ctx.drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh)
+          dataUrl = cropped.toDataURL('image/png')
+        } else {
+          dataUrl = canvas.toDataURL('image/png')
+        }
+      } catch (e) {
+        dataUrl = canvas.toDataURL('image/png')
+      }
 
       // create a modal preview overlay so the user can inspect before downloading
       const overlay = document.createElement('div') as HTMLDivElement
