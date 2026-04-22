@@ -779,18 +779,33 @@ export default function Index() {
             fixed.height = FIXED_H
             const fctx = fixed.getContext('2d')
             if (fctx) {
-              // Scale the final canvas into the fixed output size. We draw
-              // the entire finalCanvas to the output canvas; because `scale`
-              // was chosen above to ensure finalCanvas.width >= FIXED_W,
-              // this will generally be a downscale operation with good quality.
-              fctx.fillStyle = '#0b1020'
-              fctx.fillRect(0, 0, FIXED_W, FIXED_H)
-              try {
-                fctx.drawImage(finalCanvas, 0, 0, finalCanvas.width, finalCanvas.height, 0, 0, FIXED_W, FIXED_H)
-              } catch (e) {
-                // Fallback: draw what we can
-                fctx.drawImage(finalCanvas, 0, 0)
-              }
+                // Compute a centered crop from the source canvas that matches
+                // the target aspect ratio, then draw it into the fixed output
+                // canvas. This preserves aspect ratio and avoids squashing.
+                fctx.fillStyle = '#0b1020'
+                fctx.fillRect(0, 0, FIXED_W, FIXED_H)
+                const srcFullW = finalCanvas.width
+                const srcFullH = finalCanvas.height
+                if (srcFullW > 0 && srcFullH > 0) {
+                  // Preferred crop: use full source width and compute the
+                  // required source height to match target aspect ratio.
+                  let sW = srcFullW
+                  let sH = Math.round((sW * FIXED_H) / FIXED_W)
+                  let sx = 0
+                  let sy = 0
+
+                  if (sH <= srcFullH) {
+                    // crop vertically (centered)
+                    sy = Math.floor((srcFullH - sH) / 2)
+                  } else {
+                    // required height exceeds source -> crop horizontally instead
+                    sH = srcFullH
+                    sW = Math.max(1, Math.round((sH * FIXED_W) / FIXED_H))
+                    sx = Math.floor((srcFullW - sW) / 2)
+                  }
+
+                  fctx.drawImage(finalCanvas, sx, sy, sW, sH, 0, 0, FIXED_W, FIXED_H)
+                }
             }
             outputCanvas = fixed
           }
