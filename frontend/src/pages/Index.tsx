@@ -767,9 +767,27 @@ export default function Index() {
         }
 
         try {
-          finalCanvas.toBlob((blob) => {
+          let outputCanvas: HTMLCanvasElement = finalCanvas
+          if (isMobile) {
+            const FIXED_W = 1000
+            const FIXED_H = 1573
+            const fixed = document.createElement('canvas')
+            fixed.width = FIXED_W
+            fixed.height = FIXED_H
+            const fctx = fixed.getContext('2d')
+            if (fctx) {
+              const srcW = finalCanvas.width
+              const srcHWanted = Math.round(FIXED_H * scale)
+              const srcH = Math.min(finalCanvas.height, srcHWanted)
+              const sy = 0
+              fctx.drawImage(finalCanvas, 0, sy, srcW, srcH, 0, 0, FIXED_W, FIXED_H)
+            }
+            outputCanvas = fixed
+          }
+
+          outputCanvas.toBlob((blob) => {
             if (!blob) {
-              const url = finalCanvas.toDataURL('image/png')
+              const url = outputCanvas.toDataURL('image/png')
               showPreviewFromUrl(url)
               return
             }
