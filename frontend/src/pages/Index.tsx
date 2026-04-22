@@ -1,5 +1,6 @@
 import html2canvas from 'html2canvas-pro'
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import { usePage } from '@inertiajs/react'
 import MainLayout from '../layouts/MainLayout'
 import { Button } from '@/components/ui/button'
@@ -116,6 +117,11 @@ interface AutocompleteProps {
 
 function Autocomplete({ id, value, onChange, options, aliasMap, placeholder }: AutocompleteProps) {
   const [items, setItems] = useState<DropdownItem[]>([])
+  const wrapperRef = useRef<HTMLDivElement | null>(null)
+  const [rect, setRect] = useState<DOMRect | null>(null)
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => { setMounted(true); return () => setMounted(false) }, [])
 
   function build(val: string) {
     if (!val) { setItems([]); return }
@@ -145,10 +151,48 @@ function Autocomplete({ id, value, onChange, options, aliasMap, placeholder }: A
     }
     matches.sort((a, b) => { if (a.type !== b.type) return a.type === 'exact' ? -1 : 1; return b.sim - a.sim })
     setItems(matches.slice(0, 10))
+    // update position
+    if (wrapperRef.current) setRect(wrapperRef.current.getBoundingClientRect())
   }
 
+  useEffect(() => {
+    function update() { if (wrapperRef.current) setRect(wrapperRef.current.getBoundingClientRect()) }
+    update()
+    window.addEventListener('resize', update)
+    window.addEventListener('scroll', update, true)
+    return () => { window.removeEventListener('resize', update); window.removeEventListener('scroll', update, true) }
+  }, [])
+
+  useEffect(() => {
+    if (!items.length) return
+    function onDocClick(e: MouseEvent) {
+      if (!wrapperRef.current) return
+      if (!wrapperRef.current.contains(e.target as Node)) setItems([])
+    }
+    document.addEventListener('mousedown', onDocClick)
+    return () => document.removeEventListener('mousedown', onDocClick)
+  }, [items])
+
+  const dropdown = items.length > 0 && rect ? (
+    <div style={{ position: 'absolute', left: rect.left + window.scrollX, top: rect.bottom + window.scrollY, width: rect.width, zIndex: 100000 }}>
+      <div className="mt-1 max-h-48 overflow-y-auto rounded-lg border bg-popover text-popover-foreground shadow-md">
+        {items.map((m, i) => (
+          <button
+            key={i}
+            type="button"
+            className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground transition-colors"
+            onClick={() => { onChange(m.value); setItems([]) }}
+          >
+            {m.value}
+            {m.type === 'fuzzy' && <span className="text-muted-foreground text-xs ml-1">({m.sim}% match)</span>}
+          </button>
+        ))}
+      </div>
+    </div>
+  ) : null
+
   return (
-    <div className="relative">
+    <div className="relative" ref={wrapperRef}>
       <Input
         id={id}
         type="text"
@@ -157,21 +201,7 @@ function Autocomplete({ id, value, onChange, options, aliasMap, placeholder }: A
         autoComplete="off"
         onChange={e => { onChange(e.target.value); build(e.target.value) }}
       />
-      {items.length > 0 && (
-        <div className="absolute top-full left-0 right-0 z-50 mt-1 max-h-48 overflow-y-auto rounded-lg border bg-popover text-popover-foreground shadow-md">
-          {items.map((m, i) => (
-            <button
-              key={i}
-              type="button"
-              className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground transition-colors"
-              onClick={() => { onChange(m.value); setItems([]) }}
-            >
-              {m.value}
-              {m.type === 'fuzzy' && <span className="text-muted-foreground text-xs ml-1">({m.sim}% match)</span>}
-            </button>
-          ))}
-        </div>
-      )}
+      {mounted && dropdown && createPortal(dropdown, document.body)}
     </div>
   )
 }
@@ -1302,7 +1332,7 @@ export default function Index() {
                 </Select>
               </div>
 
-              <div className="flex flex-col gap-1.5 flex-1 min-w-[200px]">
+              <div className="flex flex-col gap-1.5 flex-1 min-w-[200px] overflow-visible">
                 <Label>Name</Label>
                 <Autocomplete id="table-name" value={nameFilter} onChange={setNameFilter} options={allSongNames} aliasMap={aliasToTitleMap} placeholder="Fuzzy search name" />
               </div>
