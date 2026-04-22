@@ -679,20 +679,26 @@ export default function Index() {
           overlay.style.width = '100%'
           overlay.style.height = '100%'
           overlay.style.display = 'flex'
-          overlay.style.alignItems = 'center'
+          // Allow scrolling on overflow so large images can be panned
+          overlay.style.overflow = 'auto'
+          overlay.style.setProperty('-webkit-overflow-scrolling', 'touch')
+          overlay.style.alignItems = isMobile ? 'flex-start' : 'center'
           overlay.style.justifyContent = 'center'
           overlay.style.background = 'rgba(0,0,0,0.6)'
           overlay.style.zIndex = '2147483647'
 
           const modal = document.createElement('div') as HTMLDivElement
           modal.style.background = '#0b1020'
-          modal.style.padding = '12px'
-          modal.style.borderRadius = '8px'
-          // Make the modal wide on mobile so the preview image can scale up
-          modal.style.width = '90vw'
-          modal.style.maxWidth = '1000px'
-          modal.style.maxHeight = 'calc(100% - 120px)'
+          // On mobile we want the modal to allow the image to be shown at
+          // its full output resolution (2000x3146) so avoid constraining
+          // the modal size — let the overlay scroll instead.
+          modal.style.padding = isMobile ? '0' : '12px'
+          modal.style.borderRadius = isMobile ? '0' : '8px'
+          modal.style.width = isMobile ? '2000px' : '90vw'
+          modal.style.maxWidth = isMobile ? 'none' : '1000px'
+          modal.style.maxHeight = isMobile ? 'none' : 'calc(100% - 120px)'
           modal.style.overflow = 'auto'
+          modal.style.setProperty('-webkit-overflow-scrolling', 'touch')
           modal.style.boxShadow = '0 8px 20px rgba(0,0,0,0.6)'
           modal.style.display = 'flex'
           modal.style.flexDirection = 'column'
@@ -700,10 +706,18 @@ export default function Index() {
 
           const img = document.createElement('img') as HTMLImageElement
           img.src = url
-          // Force the preview image to fill the modal width so it is not tiny
-          img.style.width = '100%'
-          img.style.height = 'auto'
-          img.style.maxHeight = 'calc(100vh - 200px)'
+          // On mobile, display the image at its native output pixel size
+          // so it remains crisp; allow the overlay to scroll/pan to view it.
+          if (isMobile) {
+            img.style.width = '2000px'
+            img.style.height = '3146px'
+            img.style.maxWidth = 'none'
+            img.style.maxHeight = 'none'
+          } else {
+            img.style.width = '100%'
+            img.style.height = 'auto'
+            img.style.maxHeight = 'calc(100vh - 200px)'
+          }
           img.style.display = 'block'
           img.style.margin = '0 auto'
 
