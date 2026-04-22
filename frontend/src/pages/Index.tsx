@@ -452,6 +452,8 @@ export default function Index() {
     if (!gridRef.current) return
     showStatus('Generating image from fixed viewport...', 'info', 0)
     const el = gridRef.current
+    if (!el) return
+    // Capture the entire B50 stage (includes player name and total rating)
     const prevOverflow = el.style.overflow
     const prevWidth = el.style.width
 
