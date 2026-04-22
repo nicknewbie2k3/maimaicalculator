@@ -689,9 +689,11 @@ export default function Index() {
           // mobile: let the overlay scroll and show the image at native output
           modal.style.padding = isMobile ? '0' : '12px'
           modal.style.borderRadius = isMobile ? '0' : '8px'
-          modal.style.width = isMobile ? '2000px' : 'auto'
-          modal.style.maxWidth = isMobile ? 'none' : '1000px'
-          modal.style.maxHeight = isMobile ? 'none' : 'calc(100% - 120px)'
+          // On mobile show a viewport-scaled preview (90vw) while keeping
+          // the underlying image at high resolution for download.
+          modal.style.width = isMobile ? '90vw' : 'auto'
+          modal.style.maxWidth = isMobile ? '90vw' : '1000px'
+          modal.style.maxHeight = isMobile ? 'calc(100vh - 120px)' : 'calc(100% - 120px)'
           modal.style.overflow = 'auto'
           modal.style.boxShadow = '0 8px 20px rgba(0,0,0,0.6)'
           modal.style.display = 'flex'
@@ -701,11 +703,13 @@ export default function Index() {
           const img = document.createElement('img') as HTMLImageElement
           img.src = url
           if (isMobile) {
-            // show at native output size on mobile so it's crisp; overlay scrolls
-            img.style.width = '2000px'
-            img.style.height = '3146px'
-            img.style.maxWidth = 'none'
-            img.style.maxHeight = 'none'
+            // Preview scaled down to viewport width but remains high-res
+            img.style.width = '90vw'
+            img.style.height = 'auto'
+            img.style.maxWidth = '90vw'
+            img.style.maxHeight = 'calc(100vh - 140px)'
+            img.style.display = 'block'
+            img.style.margin = '0 auto'
           } else {
             // desktop: don't force width — preserve intrinsic aspect ratio
             img.style.width = 'auto'
