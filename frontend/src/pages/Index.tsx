@@ -676,19 +676,22 @@ export default function Index() {
           overlay.style.width = '100%'
           overlay.style.height = '100%'
           overlay.style.display = 'flex'
-          overlay.style.alignItems = 'center'
+          // allow scrolling so large images can be panned on small screens
+          overlay.style.overflow = 'auto'
+          overlay.style.setProperty('-webkit-overflow-scrolling', 'touch')
+          overlay.style.alignItems = isMobile ? 'flex-start' : 'center'
           overlay.style.justifyContent = 'center'
           overlay.style.background = 'rgba(0,0,0,0.6)'
           overlay.style.zIndex = '2147483647'
 
           const modal = document.createElement('div') as HTMLDivElement
           modal.style.background = '#0b1020'
-          modal.style.padding = '12px'
-          modal.style.borderRadius = '8px'
-          // Make the modal wide on mobile so the preview image can scale up
-          modal.style.width = '90vw'
-          modal.style.maxWidth = '1000px'
-          modal.style.maxHeight = 'calc(100% - 120px)'
+          // mobile: let the overlay scroll and show the image at native output
+          modal.style.padding = isMobile ? '0' : '12px'
+          modal.style.borderRadius = isMobile ? '0' : '8px'
+          modal.style.width = isMobile ? '2000px' : 'auto'
+          modal.style.maxWidth = isMobile ? 'none' : '1000px'
+          modal.style.maxHeight = isMobile ? 'none' : 'calc(100% - 120px)'
           modal.style.overflow = 'auto'
           modal.style.boxShadow = '0 8px 20px rgba(0,0,0,0.6)'
           modal.style.display = 'flex'
@@ -697,12 +700,22 @@ export default function Index() {
 
           const img = document.createElement('img') as HTMLImageElement
           img.src = url
-          // Force the preview image to fill the modal width so it is not tiny
-          img.style.width = '100%'
-          img.style.height = 'auto'
-          img.style.maxHeight = 'calc(100vh - 200px)'
-          img.style.display = 'block'
-          img.style.margin = '0 auto'
+          if (isMobile) {
+            // show at native output size on mobile so it's crisp; overlay scrolls
+            img.style.width = '2000px'
+            img.style.height = '3146px'
+            img.style.maxWidth = 'none'
+            img.style.maxHeight = 'none'
+          } else {
+            // desktop: don't force width — preserve intrinsic aspect ratio
+            img.style.width = 'auto'
+            img.style.height = 'auto'
+            img.style.maxWidth = '100%'
+            img.style.maxHeight = 'calc(100vh - 200px)'
+            img.style.objectFit = 'contain'
+            img.style.display = 'block'
+            img.style.margin = '0 auto'
+          }
 
           const controls = document.createElement('div') as HTMLDivElement
           controls.style.display = 'flex'
