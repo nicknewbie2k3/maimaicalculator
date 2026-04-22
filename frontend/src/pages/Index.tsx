@@ -473,6 +473,25 @@ export default function Index() {
       container.style.visibility = 'visible'
       container.style.zIndex = '2147483647'
 
+      // Scoped override: force desktop grid/layout inside the clone so
+      // media queries based on the phone viewport don't collapse it.
+      try {
+        const overrideStyle = document.createElement('style')
+        overrideStyle.type = 'text/css'
+        overrideStyle.textContent = `
+          .b50-print-clone .b50-grid {
+            grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+            gap: 10px !important;
+            padding: 14px !important;
+            max-width: none !important;
+          }
+          .b50-print-clone .b50-stage { width: ${FIXED_VIEWPORT_WIDTH}px !important; }
+          .b50-print-clone .song-card { box-sizing: border-box !important; }
+          .b50-print-clone * { background-attachment: scroll !important; }
+        `
+        container.appendChild(overrideStyle)
+      } catch (e) { /* ignore style injection errors */ }
+
       // clone the grid and sanitize styles that may vary per user
       const clone = el.cloneNode(true) as HTMLElement
       clone.querySelectorAll('[id]').forEach(n => n.removeAttribute('id'))
@@ -489,6 +508,22 @@ export default function Index() {
 
       container.appendChild(clone)
       document.body.appendChild(container)
+
+      // Neutralize any fixed-position descendants inside the clone so they
+      // don't render relative to the real viewport. Keep layout stable.
+      try {
+        Array.from(container.querySelectorAll('*')).forEach(n => {
+          try {
+            const nn = n as HTMLElement
+            const cs = window.getComputedStyle(nn)
+            if (cs.position === 'fixed') {
+              nn.style.position = 'relative'
+              nn.style.top = 'auto'
+              nn.style.left = 'auto'
+            }
+          } catch (e) { /* ignore per-node errors */ }
+        })
+      } catch (e) { /* ignore */ }
 
       // Copy a set of important computed style properties from the live
       // grid into the clone. This greatly improves fidelity for the
