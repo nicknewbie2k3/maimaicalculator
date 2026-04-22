@@ -1,5 +1,5 @@
 import html2canvas from 'html2canvas-pro'
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { usePage } from '@inertiajs/react'
 import MainLayout from '../layouts/MainLayout'
 import { Button } from '@/components/ui/button'
@@ -105,6 +105,77 @@ function calcSimilarity(a: string, b: string): number {
   return Math.round((common / total) * 70 + (pos / minLen) * 20 + (sub / total) * 10)
 }
 
+interface AutocompleteProps {
+  id: string
+  value: string
+  onChange: (val: string) => void
+  options: string[]
+  aliasMap?: Record<string, string>
+  placeholder?: string
+}
+
+function Autocomplete({ id, value, onChange, options, aliasMap, placeholder }: AutocompleteProps) {
+  const [items, setItems] = useState<DropdownItem[]>([])
+
+  function build(val: string) {
+    if (!val) { setItems([]); return }
+    const v = val.toLowerCase()
+    const matches: DropdownItem[] = []
+    const seen = new Set<string>()
+    const add = (value: string, type: 'exact' | 'fuzzy', sim = 100) => {
+      if (!seen.has(value)) { seen.add(value); matches.push({ value, type, sim }) }
+    }
+    if (aliasMap) {
+      Object.keys(aliasMap).filter(a => a.toLowerCase().includes(v)).forEach(a => add(aliasMap[a], 'exact'))
+      options.filter(n => n.toLowerCase().includes(v)).forEach(n => add(n, 'exact'))
+      if (matches.length < 5) {
+        Object.keys(aliasMap).forEach(a => {
+          const t = aliasMap[a]
+          if (!seen.has(t)) { const s = calcSimilarity(v, a.toLowerCase()); if (s >= 30) { seen.add(t); matches.push({ value: t, type: 'fuzzy', sim: s }) } }
+        })
+        options.forEach(n => {
+          if (!seen.has(n)) { const s = calcSimilarity(v, n.toLowerCase()); if (s >= 30) { seen.add(n); matches.push({ value: n, type: 'fuzzy', sim: s }) } }
+        })
+      }
+    } else {
+      options.filter(o => o.toLowerCase().includes(v)).forEach(o => add(o, 'exact'))
+      if (matches.length < 5) options.forEach(o => {
+        if (!seen.has(o)) { const s = calcSimilarity(v, o.toLowerCase()); if (s >= 30) { seen.add(o); matches.push({ value: o, type: 'fuzzy', sim: s }) } }
+      })
+    }
+    matches.sort((a, b) => { if (a.type !== b.type) return a.type === 'exact' ? -1 : 1; return b.sim - a.sim })
+    setItems(matches.slice(0, 10))
+  }
+
+  return (
+    <div className="relative">
+      <Input
+        id={id}
+        type="text"
+        value={value}
+        placeholder={placeholder}
+        autoComplete="off"
+        onChange={e => { onChange(e.target.value); build(e.target.value) }}
+      />
+      {items.length > 0 && (
+        <div className="absolute top-full left-0 right-0 z-50 mt-1 max-h-48 overflow-y-auto rounded-lg border bg-popover text-popover-foreground shadow-md">
+          {items.map((m, i) => (
+            <button
+              key={i}
+              type="button"
+              className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground transition-colors"
+              onClick={() => { onChange(m.value); setItems([]) }}
+            >
+              {m.value}
+              {m.type === 'fuzzy' && <span className="text-muted-foreground text-xs ml-1">({m.sim}% match)</span>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function isNewChart(song: Pick<Song, 'version' | 'song_name'>, dict: SongsDict): boolean {
   const v = song.version || (dict[song.song_name] || {}).version || ''
   return v === 'PRiSM PLUS' || v === 'CiRCLE'
@@ -114,15 +185,31 @@ function diffClass(d: string): string {
   return ({ basic: 'diff-basic', advanced: 'diff-advanced', expert: 'diff-expert', master: 'diff-master', 're:master': 'diff-remas', remaster: 'diff-remas' } as Record<string, string>)[d.toLowerCase()] || ''
 }
 
-function recategorize(data: B50Data, dict: SongsDict): B50Data {
+function recategorize(data: B50Data, dict: SongsDict, aliasMap?: Record<string, string>): B50Data {
   const out: B50Data = { old_songs: [], new_songs: [] }
   const add = (song: Song, arr: Song[]) => {
     const idx = arr.findIndex(s => s.song_name === song.song_name && s.difficulty_type === song.difficulty_type)
     if (idx !== -1) { if (song.achievement > arr[idx].achievement) arr[idx] = song }
     else arr.push(song)
   }
+
+  const resolveCanonical = (name: string) => {
+    if (!name) return name
+    if (dict[name]) return name
+    if (aliasMap) {
+      if (aliasMap[name]) return aliasMap[name]
+      const found = Object.keys(aliasMap).find(k => k.toLowerCase() === name.toLowerCase())
+      if (found) return aliasMap[found]
+    }
+    const foundInDict = Object.keys(dict || {}).find(k => k.toLowerCase() === name.toLowerCase())
+    return foundInDict || name
+  }
+
   ;[...data.old_songs, ...data.new_songs].forEach(s => {
-    if (!s.version) s.version = (dict[s.song_name] || {}).version || ''
+    if (!s.version) {
+      const key = resolveCanonical(s.song_name)
+      s.version = (dict[key] || {}).version || ''
+    }
     const isNew = isNewChart(s, dict)
     add(s, isNew ? out.new_songs : out.old_songs)
   })
@@ -293,6 +380,14 @@ export default function Index() {
   const [achievement, setAchievement] = useState('')
   const [dropdown, setDropdown] = useState<DropdownItem[]>([])
   const [username, setUsername] = useState('')
+  // Table filters (affect only the table view, not the grid).
+  const [tableFiltersEnabled, setTableFiltersEnabled] = useState(false)
+  const [chartConstMin, setChartConstMin] = useState('')
+  const [chartConstMax, setChartConstMax] = useState('')
+  const [difficultyFilter, setDifficultyFilter] = useState('')
+  const [nameFilter, setNameFilter] = useState('')
+  const [versionFilter, setVersionFilter] = useState('')
+  const [categoryFilter, setCategoryFilter] = useState('')
 
   const b50FileRef = useRef<HTMLInputElement>(null)
   const cacheFileRef = useRef<HTMLInputElement>(null)
@@ -323,7 +418,7 @@ export default function Index() {
       setB50State({ old_songs: oldArr, new_songs: newArr })
     } else {
       const stored = readB50()
-      setB50State(recategorize(stored, maimaiSongsDict))
+      setB50State(recategorize(stored, maimaiSongsDict, aliasToTitleMap))
       setFullDataState(null)
     }
     setUsername(localStorage.getItem(USERNAME_KEY) || '')
@@ -379,7 +474,7 @@ export default function Index() {
       arr.push(song)
       arr.sort((a, b) => b.calculated_rating - a.calculated_rating)
       if (arr.length > max) arr.splice(max)
-      const newB50 = recategorize(raw, maimaiSongsDict)
+      const newB50 = recategorize(raw, maimaiSongsDict, aliasToTitleMap)
       writeB50(newB50)
       const full = readFull() ?? { old_songs: [], new_songs: [] }
       const fa = isNew ? full.new_songs : full.old_songs
@@ -402,7 +497,7 @@ export default function Index() {
       const data = await res.json() as { status: string; message: string; data: B50Data }
       if (data.status === 'success') {
         writeFull(data.data)
-        const rec = recategorize(data.data, maimaiSongsDict)
+        const rec = recategorize(data.data, maimaiSongsDict, aliasToTitleMap)
         writeB50(rec)
         showStatus(`${data.message} Imported ${rec.old_songs.length} old and ${rec.new_songs.length} new songs.`, 'success')
       } else showStatus('Error: ' + data.message, 'danger')
@@ -864,6 +959,109 @@ export default function Index() {
   const tableOld = fullData?.old_songs?.length ? fullData.old_songs : display.old_songs
   const tableNew = fullData?.new_songs?.length ? fullData.new_songs : display.new_songs
 
+  const versions = useMemo(() => {
+    const s = new Set<string>()
+    Object.values(maimaiSongsDict || {}).forEach(v => { if (v && (v as any).version) s.add((v as any).version) })
+    return Array.from(s).sort()
+  }, [maimaiSongsDict])
+
+  const categories = useMemo(() => {
+    const s = new Set<string>()
+    Object.values(maimaiSongsDict || {}).forEach(v => { if (v && (v as any).chart_type) s.add((v as any).chart_type) })
+    return Array.from(s).sort()
+  }, [maimaiSongsDict])
+
+  const difficultyOptions = ['Basic', 'Advanced', 'Expert', 'Master/Re:Master']
+
+  // Apply table filters (chart constant range, difficulty, name fuzzy,
+  // version, category). These filters only affect the table view.
+  const parsedMin = parseFloat(chartConstMin)
+  const parsedMax = parseFloat(chartConstMax)
+
+  const resolveAliasToTitle = (val: string) => {
+    if (!val) return null
+    const lower = val.toLowerCase()
+    const foundKey = Object.keys(aliasToTitleMap).find(k => k.toLowerCase() === lower)
+    return foundKey ? aliasToTitleMap[foundKey] : null
+  }
+
+  const canonicalFor = (name: string) => {
+    if (!name) return name
+    if (maimaiSongsDict[name]) return name
+    if (aliasToTitleMap) {
+      if (aliasToTitleMap[name]) return aliasToTitleMap[name]
+      const found = Object.keys(aliasToTitleMap).find(k => k.toLowerCase() === name.toLowerCase())
+      if (found) return aliasToTitleMap[found]
+    }
+    const foundInDict = Object.keys(maimaiSongsDict || {}).find(k => k.toLowerCase() === name.toLowerCase())
+    return foundInDict || name
+  }
+
+  const applyFilters = (arr: Song[]) => {
+    if (!tableFiltersEnabled) return arr
+    return arr.filter(s => {
+      if (!s) return false
+      // chart constant (chart difficulty) range
+      const cd = parseFloat(String(s.chart_difficulty) || '')
+      if (!Number.isNaN(parsedMin) && cd < parsedMin) return false
+      if (!Number.isNaN(parsedMax) && cd > parsedMax) return false
+
+      // difficulty type filter
+      if (difficultyFilter) {
+        const songDNorm = String(s.difficulty_type || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+        const sel = difficultyFilter.toString()
+        // If user selected the merged Master/Re:Master category, match any master variant
+        if (sel === 'Master/Re:Master') {
+          const masters = ['master', 'remaster']
+          const ok = masters.some(m => songDNorm.includes(m))
+          if (!ok) return false
+        } else {
+          const selNorm = sel.toLowerCase().replace(/[^a-z0-9]/g, '')
+          if (!songDNorm.includes(selNorm)) return false
+        }
+      }
+
+      // name fuzzy matching: accept exact contains or similarity >= 60
+      if (nameFilter && nameFilter.trim()) {
+        const resolved = resolveAliasToTitle(nameFilter.trim())
+        const needle = (resolved || nameFilter).toString().toLowerCase()
+        const songName = (s.song_name || '').toString().toLowerCase()
+        if (songName.includes(needle)) {
+          // match
+        } else {
+          const sim = calcSimilarity(songName, needle)
+          if (sim < 60) return false
+        }
+      }
+
+      // version filter (use song.version or lookup in dict)
+      if (versionFilter) {
+        const key = canonicalFor(s.song_name)
+        const v = s.version || (maimaiSongsDict[key] || {}).version || ''
+        if (v !== versionFilter) return false
+      }
+
+      // category filter (chart_type from dict) — resolve aliases/keys first
+      if (categoryFilter) {
+        const key = canonicalFor(s.song_name)
+        const ct = (maimaiSongsDict[key] || {}).chart_type || ''
+        if (ct !== categoryFilter) return false
+      }
+
+      return true
+    })
+  }
+
+  const filteredTableOld = applyFilters(tableOld)
+  const filteredTableNew = applyFilters(tableNew)
+
+  const combinedFiltered = useMemo(() => {
+    if (!tableFiltersEnabled) return [] as Song[]
+    const combined = [...filteredTableOld, ...filteredTableNew]
+    combined.sort((a, b) => (b.calculated_rating || 0) - (a.calculated_rating || 0))
+    return combined
+  }, [tableFiltersEnabled, filteredTableOld, filteredTableNew])
+
   return (
     <MainLayout>
       <div className="w-full px-4 py-8 max-w-full sm:max-w-5xl mx-auto">
@@ -1061,21 +1259,141 @@ export default function Index() {
         </div>
         )}
 
-        {tableOld.length > 0 && (
-          <div className="rounded-xl border bg-card shadow-sm overflow-hidden mb-6">
-            <div className="px-4 py-3 border-b bg-muted/30">
-              <h2 className="text-sm font-semibold">Old Songs — All {fullData?.old_songs?.length ?? display.old_songs.length} chart scores</h2>
-            </div>
-            <SongTable label="Old Songs" songs={tableOld} idPrefix="old" />
+        {/* Table-level filter controls (affects only the table view, not the grid) */}
+        {(tableOld.length > 0 || tableNew.length > 0) && (
+          <div className="rounded-xl border bg-card shadow-sm p-4 mb-6 semi-transparent">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-3">Table Filters</p>
+            <form className="flex flex-wrap gap-3 items-end" onSubmit={e => e.preventDefault()}>
+              <div className="flex flex-col gap-1.5">
+                <Label>Enable</Label>
+                <label className="inline-flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={tableFiltersEnabled}
+                    onChange={e => setTableFiltersEnabled((e.target as HTMLInputElement).checked)}
+                    className="form-checkbox"
+                  />
+                  <span className="ml-1">Enable table filters</span>
+                </label>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <Label>Chart Const Min</Label>
+                <Input type="number" value={chartConstMin} onChange={e => setChartConstMin((e.target as HTMLInputElement).value)} placeholder="Min" className="w-28" />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <Label>Chart Const Max</Label>
+                <Input type="number" value={chartConstMax} onChange={e => setChartConstMax((e.target as HTMLInputElement).value)} placeholder="Max" className="w-28" />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <Label>Difficulty</Label>
+                <Select onValueChange={v => setDifficultyFilter(v)} value={difficultyFilter}>
+                  <SelectTrigger className="w-44">
+                    <SelectValue placeholder="Any" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="">Any</SelectItem>
+                      {difficultyOptions.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex flex-col gap-1.5 flex-1 min-w-[200px]">
+                <Label>Name</Label>
+                <Autocomplete id="table-name" value={nameFilter} onChange={setNameFilter} options={allSongNames} aliasMap={aliasToTitleMap} placeholder="Fuzzy search name" />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <Label>Version</Label>
+                <Select onValueChange={v => setVersionFilter(v)} value={versionFilter}>
+                  <SelectTrigger className="w-44">
+                    <SelectValue placeholder="Any" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="">Any</SelectItem>
+                      {versions.map(v => <SelectItem key={v} value={v}>{v}</SelectItem>)}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <Label>Category</Label>
+                <Select onValueChange={v => setCategoryFilter(v)} value={categoryFilter}>
+                  <SelectTrigger className="w-36">
+                    <SelectValue placeholder="Any" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="">Any</SelectItem>
+                      {categories.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="ml-auto flex gap-2 items-center">
+                <Button
+                  size="sm"
+                  className="bg-red-600 hover:bg-red-700 text-white rounded-lg px-3 py-2 flex items-center gap-2 shadow-sm"
+                  onClick={() => {
+                    setTableFiltersEnabled(false)
+                    setChartConstMin('')
+                    setChartConstMax('')
+                    setDifficultyFilter('')
+                    setNameFilter('')
+                    setVersionFilter('')
+                    setCategoryFilter('')
+                  }}
+                >
+                  <Trash2 className="w-4 h-4 text-white" />
+                  Clear
+                </Button>
+              </div>
+            </form>
           </div>
         )}
-        {tableNew.length > 0 && (
-          <div className="rounded-xl border bg-card shadow-sm overflow-hidden mb-6">
-            <div className="px-4 py-3 border-b bg-muted/30">
-              <h2 className="text-sm font-semibold">New Songs — All {fullData?.new_songs?.length ?? display.new_songs.length} chart scores</h2>
+
+        {tableFiltersEnabled ? (
+          combinedFiltered.length > 0 ? (
+            <div className="rounded-xl border bg-card shadow-sm overflow-hidden mb-6">
+              <div className="px-4 py-3 border-b bg-muted/30">
+                <h2 className="text-sm font-semibold">Filtered Songs — {combinedFiltered.length} chart scores</h2>
+              </div>
+              <SongTable label="Filtered Songs" songs={combinedFiltered} idPrefix="combined" />
             </div>
-            <SongTable label="New Songs" songs={tableNew} idPrefix="new" />
-          </div>
+          ) : (
+            <div className="rounded-xl border bg-card shadow-sm overflow-hidden mb-6">
+              <div className="px-4 py-3 border-b bg-muted/30">
+                <h2 className="text-sm font-semibold">Filtered Songs</h2>
+              </div>
+              <div className="p-6 text-center text-muted-foreground">No songs match the current filters.</div>
+            </div>
+          )
+        ) : (
+          <>
+            {filteredTableOld.length > 0 && (
+              <div className="rounded-xl border bg-card shadow-sm overflow-hidden mb-6">
+                <div className="px-4 py-3 border-b bg-muted/30">
+                  <h2 className="text-sm font-semibold">Old Songs — All {fullData?.old_songs?.length ?? display.old_songs.length} chart scores</h2>
+                </div>
+                <SongTable label="Old Songs" songs={filteredTableOld} idPrefix="old" />
+              </div>
+            )}
+            {filteredTableNew.length > 0 && (
+              <div className="rounded-xl border bg-card shadow-sm overflow-hidden mb-6">
+                <div className="px-4 py-3 border-b bg-muted/30">
+                  <h2 className="text-sm font-semibold">New Songs — All {fullData?.new_songs?.length ?? display.new_songs.length} chart scores</h2>
+                </div>
+                <SongTable label="New Songs" songs={filteredTableNew} idPrefix="new" />
+              </div>
+            )}
+          </>
         )}
       </div>
     </MainLayout>
