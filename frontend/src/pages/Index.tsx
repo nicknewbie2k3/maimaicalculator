@@ -598,12 +598,15 @@ export default function Index() {
       const h = clone.scrollHeight
       const isMobile = /Mobi|Android|iPhone|iPad|Mobile/i.test(navigator.userAgent) || window.innerWidth < 800
       const MAX_DIM = isMobile ? 16000 : MAX
-      // Option A: on mobile, use the devicePixelRatio to improve output
-      // quality for testing. Cap the DPR to a reasonable value to avoid
-      // creating excessively large canvases on low-memory devices.
+      // Option A: on mobile, use devicePixelRatio but ensure the generated
+      // canvas is large enough to produce a 2000x3146 output without
+      // upscaling. Cap the DPR to avoid excessively large canvases.
       const devicePR = (typeof window !== 'undefined' && window.devicePixelRatio) ? window.devicePixelRatio : 1
-      const targetScale = isMobile ? Math.max(1, Math.min(devicePR, 3)) : 2
-      const scale = Math.min(targetScale, MAX_DIM / Math.max(w, h))
+      const OUTPUT_W = 2000
+      const OUTPUT_H = 3146
+      const minScaleForOutput = isMobile ? (OUTPUT_W / Math.max(1, w)) : 1
+      const desiredScale = isMobile ? Math.max(devicePR, minScaleForOutput, 2) : 2
+      const scale = Math.min(desiredScale, MAX_DIM / Math.max(w, h))
 
       // Yield briefly so the browser can render the 'Generating...' status
       try { await new Promise(r => setTimeout(r, 50)) } catch (e) { /* ignore */ }
@@ -769,18 +772,25 @@ export default function Index() {
         try {
           let outputCanvas: HTMLCanvasElement = finalCanvas
           if (isMobile) {
-            const FIXED_W = 1000
-            const FIXED_H = 1573
+            const FIXED_W = 2000
+            const FIXED_H = 3146
             const fixed = document.createElement('canvas')
             fixed.width = FIXED_W
             fixed.height = FIXED_H
             const fctx = fixed.getContext('2d')
             if (fctx) {
-              const srcW = finalCanvas.width
-              const srcHWanted = Math.round(FIXED_H * scale)
-              const srcH = Math.min(finalCanvas.height, srcHWanted)
-              const sy = 0
-              fctx.drawImage(finalCanvas, 0, sy, srcW, srcH, 0, 0, FIXED_W, FIXED_H)
+              // Scale the final canvas into the fixed output size. We draw
+              // the entire finalCanvas to the output canvas; because `scale`
+              // was chosen above to ensure finalCanvas.width >= FIXED_W,
+              // this will generally be a downscale operation with good quality.
+              fctx.fillStyle = '#0b1020'
+              fctx.fillRect(0, 0, FIXED_W, FIXED_H)
+              try {
+                fctx.drawImage(finalCanvas, 0, 0, finalCanvas.width, finalCanvas.height, 0, 0, FIXED_W, FIXED_H)
+              } catch (e) {
+                // Fallback: draw what we can
+                fctx.drawImage(finalCanvas, 0, 0)
+              }
             }
             outputCanvas = fixed
           }
