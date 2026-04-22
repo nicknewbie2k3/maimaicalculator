@@ -525,8 +525,11 @@ export default function Index() {
           'display', 'align-items', 'justify-content', 'box-sizing', 'white-space', 'overflow', 'text-align', 'vertical-align', 'opacity', 'flex-direction', 'flex-wrap', 'gap'
         ]
 
-        const origAll = Array.from(el.querySelectorAll('*')) as HTMLElement[]
-        const cloneAll = Array.from(clone.querySelectorAll('*')) as HTMLElement[]
+        // Limit computed-style copying to a small set of selectors to
+        // reduce main-thread work on mobile devices.
+        const sel = '.song-card, .song-card-art, .song-card-info, .song-card-title, .song-card-meta, .song-card-const-group, .song-card-rank, .b50-stage, .b50-total, .b50-section-banner'
+        const origAll = Array.from(el.querySelectorAll(sel)) as HTMLElement[]
+        const cloneAll = Array.from(clone.querySelectorAll(sel)) as HTMLElement[]
         const len = Math.min(origAll.length, cloneAll.length)
         for (let i = 0; i < len; i++) {
           try {
@@ -593,7 +596,12 @@ export default function Index() {
 
       const w = clone.scrollWidth
       const h = clone.scrollHeight
-      const scale = Math.min(2, MAX / Math.max(w, h))
+      const isMobile = /Mobi|Android|iPhone|iPad|Mobile/i.test(navigator.userAgent) || window.innerWidth < 800
+      const MAX_DIM = isMobile ? 16000 : MAX
+      const scale = Math.min(isMobile ? 1 : 2, MAX_DIM / Math.max(w, h))
+
+      // Yield briefly so the browser can render the 'Generating...' status
+      try { await new Promise(r => setTimeout(r, 50)) } catch (e) { /* ignore */ }
 
       // Ensure fonts are available and the clone uses the same font-family
       // This improves text metrics and truncation fidelity in html2canvas output.
@@ -618,116 +626,136 @@ export default function Index() {
         windowHeight: h,
       })
 
-      // Crop the generated canvas to a bounding box that covers the
-      // visible stage: header (first child) down to the bottom of the
-      // last `.b50-grid` so both B35 and B15 sections are included.
-      let dataUrl: string
+      // Crop the generated canvas to the visible stage (header -> last grid)
+      // then convert to a Blob and present a preview using an object URL.
       try {
-        const cloneRect = clone.getBoundingClientRect()
-        const firstChild = clone.firstElementChild as HTMLElement | null
-        const gridNodes = Array.from(clone.querySelectorAll('.b50-grid')) as HTMLElement[]
+        let finalCanvas: HTMLCanvasElement = canvas
+        try {
+          const cloneRect = clone.getBoundingClientRect()
+          const firstChild = clone.firstElementChild as HTMLElement | null
+          const gridNodes = Array.from(clone.querySelectorAll('.b50-grid')) as HTMLElement[]
 
-        const startY = firstChild ? Math.max(0, firstChild.getBoundingClientRect().top - cloneRect.top) : 0
-        let endY = clone.scrollHeight
-        if (gridNodes.length > 0) {
-          const lastGrid = gridNodes[gridNodes.length - 1]
-          const lastBottom = lastGrid.getBoundingClientRect().bottom - cloneRect.top
-          endY = Math.min(clone.scrollHeight, Math.max(endY, lastBottom))
+          const startY = firstChild ? Math.max(0, firstChild.getBoundingClientRect().top - cloneRect.top) : 0
+          let endY = clone.scrollHeight
+          if (gridNodes.length > 0) {
+            const lastGrid = gridNodes[gridNodes.length - 1]
+            const lastBottom = lastGrid.getBoundingClientRect().bottom - cloneRect.top
+            endY = Math.min(clone.scrollHeight, Math.max(endY, lastBottom))
+          }
+
+          const safeStart = Math.max(0, Math.min(startY, clone.scrollHeight))
+          const safeEnd = Math.max(safeStart, Math.min(endY, clone.scrollHeight))
+
+          const sx = 0
+          const sy = Math.round(safeStart * scale)
+          const sw = Math.round(canvas.width)
+          const sh = Math.round((safeEnd - safeStart) * scale)
+
+          if (sh > 0 && sh <= canvas.height) {
+            const cropped = document.createElement('canvas')
+            cropped.width = sw
+            cropped.height = sh
+            const ctx = cropped.getContext('2d')
+            if (ctx) ctx.drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh)
+            finalCanvas = cropped
+          }
+        } catch (e) {
+          finalCanvas = canvas
         }
 
-        const safeStart = Math.max(0, Math.min(startY, clone.scrollHeight))
-        const safeEnd = Math.max(safeStart, Math.min(endY, clone.scrollHeight))
+        const showPreviewFromUrl = (url: string) => {
+          const overlay = document.createElement('div') as HTMLDivElement
+          overlay.style.position = 'fixed'
+          overlay.style.left = '0'
+          overlay.style.top = '0'
+          overlay.style.width = '100%'
+          overlay.style.height = '100%'
+          overlay.style.display = 'flex'
+          overlay.style.alignItems = 'center'
+          overlay.style.justifyContent = 'center'
+          overlay.style.background = 'rgba(0,0,0,0.6)'
+          overlay.style.zIndex = '2147483647'
 
-        const sx = 0
-        const sy = Math.round(safeStart * scale)
-        const sw = Math.round(canvas.width)
-        const sh = Math.round((safeEnd - safeStart) * scale)
+          const modal = document.createElement('div') as HTMLDivElement
+          modal.style.background = '#0b1020'
+          modal.style.padding = '12px'
+          modal.style.borderRadius = '8px'
+          modal.style.maxWidth = 'calc(100% - 40px)'
+          modal.style.maxHeight = 'calc(100% - 120px)'
+          modal.style.overflow = 'auto'
+          modal.style.boxShadow = '0 8px 20px rgba(0,0,0,0.6)'
+          modal.style.display = 'flex'
+          modal.style.flexDirection = 'column'
+          modal.style.alignItems = 'stretch'
 
-        if (sh > 0 && sh <= canvas.height) {
-          const cropped = document.createElement('canvas')
-          cropped.width = sw
-          cropped.height = sh
-          const ctx = cropped.getContext('2d')
-          if (ctx) ctx.drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh)
-          dataUrl = cropped.toDataURL('image/png')
-        } else {
-          dataUrl = canvas.toDataURL('image/png')
+          const img = document.createElement('img') as HTMLImageElement
+          img.src = url
+          img.style.maxWidth = '100%'
+          img.style.maxHeight = 'calc(100vh - 200px)'
+          img.style.display = 'block'
+          img.style.margin = '0 auto'
+
+          const controls = document.createElement('div') as HTMLDivElement
+          controls.style.display = 'flex'
+          controls.style.justifyContent = 'flex-end'
+          controls.style.gap = '8px'
+          controls.style.marginTop = '10px'
+
+          const downloadLink = document.createElement('a') as HTMLAnchorElement
+          downloadLink.href = url
+          downloadLink.download = 'maimai_b50_grid.png'
+          downloadLink.textContent = 'Download'
+          downloadLink.style.background = '#7c3aed'
+          downloadLink.style.color = '#fff'
+          downloadLink.style.padding = '8px 12px'
+          downloadLink.style.borderRadius = '6px'
+          downloadLink.style.textDecoration = 'none'
+
+          const closeBtn = document.createElement('button') as HTMLButtonElement
+          closeBtn.textContent = 'Close'
+          closeBtn.style.background = 'transparent'
+          closeBtn.style.color = '#fff'
+          closeBtn.style.padding = '8px 12px'
+          closeBtn.style.border = '1px solid rgba(255,255,255,0.08)'
+          closeBtn.style.borderRadius = '6px'
+
+          const removeOverlay = () => {
+            if (overlay.parentNode) overlay.parentNode.removeChild(overlay)
+            try { URL.revokeObjectURL(url) } catch (e) { /* ignore */ }
+          }
+
+          closeBtn.addEventListener('click', () => removeOverlay())
+          downloadLink.addEventListener('click', () => setTimeout(removeOverlay, 250))
+
+          controls.appendChild(downloadLink)
+          controls.appendChild(closeBtn)
+          modal.appendChild(img)
+          modal.appendChild(controls)
+          modal.addEventListener('click', e => e.stopPropagation())
+          overlay.addEventListener('click', () => removeOverlay())
+          overlay.appendChild(modal)
+          document.body.appendChild(overlay)
+
+          showStatus('Preview ready — close to dismiss or click Download.', 'success')
         }
-      } catch (e) {
-        dataUrl = canvas.toDataURL('image/png')
+
+        try {
+          finalCanvas.toBlob((blob) => {
+            if (!blob) {
+              const url = finalCanvas.toDataURL('image/png')
+              showPreviewFromUrl(url)
+              return
+            }
+            const url = URL.createObjectURL(blob)
+            showPreviewFromUrl(url)
+          }, 'image/png')
+        } catch (e) {
+          const url = finalCanvas.toDataURL('image/png')
+          showPreviewFromUrl(url)
+        }
+      } catch (err) {
+        showStatus('Error: ' + (err as Error).message, 'danger')
       }
-
-      // create a modal preview overlay so the user can inspect before downloading
-      const overlay = document.createElement('div') as HTMLDivElement
-      overlay.style.position = 'fixed'
-      overlay.style.left = '0'
-      overlay.style.top = '0'
-      overlay.style.width = '100%'
-      overlay.style.height = '100%'
-      overlay.style.display = 'flex'
-      overlay.style.alignItems = 'center'
-      overlay.style.justifyContent = 'center'
-      overlay.style.background = 'rgba(0,0,0,0.6)'
-      overlay.style.zIndex = '2147483647'
-
-      const modal = document.createElement('div') as HTMLDivElement
-      modal.style.background = '#0b1020'
-      modal.style.padding = '12px'
-      modal.style.borderRadius = '8px'
-      modal.style.maxWidth = 'calc(100% - 40px)'
-      modal.style.maxHeight = 'calc(100% - 120px)'
-      modal.style.overflow = 'auto'
-      modal.style.boxShadow = '0 8px 20px rgba(0,0,0,0.6)'
-      modal.style.display = 'flex'
-      modal.style.flexDirection = 'column'
-      modal.style.alignItems = 'stretch'
-
-      const img = document.createElement('img') as HTMLImageElement
-      img.src = dataUrl
-      img.style.maxWidth = '100%'
-      img.style.maxHeight = 'calc(100vh - 200px)'
-      img.style.display = 'block'
-      img.style.margin = '0 auto'
-
-      const controls = document.createElement('div') as HTMLDivElement
-      controls.style.display = 'flex'
-      controls.style.justifyContent = 'flex-end'
-      controls.style.gap = '8px'
-      controls.style.marginTop = '10px'
-
-      const downloadLink = document.createElement('a') as HTMLAnchorElement
-      downloadLink.href = dataUrl
-      downloadLink.download = 'maimai_b50_grid.png'
-      downloadLink.textContent = 'Download'
-      downloadLink.style.background = '#7c3aed'
-      downloadLink.style.color = '#fff'
-      downloadLink.style.padding = '8px 12px'
-      downloadLink.style.borderRadius = '6px'
-      downloadLink.style.textDecoration = 'none'
-
-      const closeBtn = document.createElement('button') as HTMLButtonElement
-      closeBtn.textContent = 'Close'
-      closeBtn.style.background = 'transparent'
-      closeBtn.style.color = '#fff'
-      closeBtn.style.padding = '8px 12px'
-      closeBtn.style.border = '1px solid rgba(255,255,255,0.08)'
-      closeBtn.style.borderRadius = '6px'
-
-      const removeOverlay = () => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay) }
-
-      closeBtn.addEventListener('click', () => removeOverlay())
-      downloadLink.addEventListener('click', () => setTimeout(removeOverlay, 250))
-
-      controls.appendChild(downloadLink)
-      controls.appendChild(closeBtn)
-      modal.appendChild(img)
-      modal.appendChild(controls)
-      modal.addEventListener('click', e => e.stopPropagation())
-      overlay.addEventListener('click', () => removeOverlay())
-      overlay.appendChild(modal)
-      document.body.appendChild(overlay)
-
-      showStatus('Preview ready — close to dismiss or click Download.', 'success')
     } catch (err) {
       showStatus('Error: ' + (err as Error).message, 'danger')
     } finally {
