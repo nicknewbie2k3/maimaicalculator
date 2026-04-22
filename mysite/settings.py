@@ -138,7 +138,7 @@ STATICFILES_STORAGE = "whitenoise.storage.CompressedStaticFilesStorage"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-ALLOWED_HOSTS = ['nicknewbie2k3.pythonanywhere.com', 'adxcalculator.vercel.app', 'localhost', '127.0.0.1', '.vercel.app']
+ALLOWED_HOSTS = ['adxcalculator.vercel.app', 'localhost', '127.0.0.1', '.vercel.app']
 
 INTERNAL_IPS = ['127.0.0.1', '::1']
 
