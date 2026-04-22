@@ -598,7 +598,12 @@ export default function Index() {
       const h = clone.scrollHeight
       const isMobile = /Mobi|Android|iPhone|iPad|Mobile/i.test(navigator.userAgent) || window.innerWidth < 800
       const MAX_DIM = isMobile ? 16000 : MAX
-      const scale = Math.min(isMobile ? 1 : 2, MAX_DIM / Math.max(w, h))
+      // Option A: on mobile, use the devicePixelRatio to improve output
+      // quality for testing. Cap the DPR to a reasonable value to avoid
+      // creating excessively large canvases on low-memory devices.
+      const devicePR = (typeof window !== 'undefined' && window.devicePixelRatio) ? window.devicePixelRatio : 1
+      const targetScale = isMobile ? Math.max(1, Math.min(devicePR, 3)) : 2
+      const scale = Math.min(targetScale, MAX_DIM / Math.max(w, h))
 
       // Yield briefly so the browser can render the 'Generating...' status
       try { await new Promise(r => setTimeout(r, 50)) } catch (e) { /* ignore */ }
@@ -705,17 +710,17 @@ export default function Index() {
           controls.style.gap = '8px'
           controls.style.marginTop = '10px'
 
-          const downloadLink = document.createElement('a') as HTMLAnchorElement
-          downloadLink.href = url
-          downloadLink.download = 'maimai_b50_grid.png'
-          downloadLink.textContent = 'Download'
-          downloadLink.style.background = '#7c3aed'
-          downloadLink.style.color = '#fff'
-          downloadLink.style.padding = '8px 12px'
-          downloadLink.style.borderRadius = '6px'
-          downloadLink.style.textDecoration = 'none'
+          const downloadBtn = document.createElement('button') as HTMLButtonElement
+          downloadBtn.type = 'button'
+          downloadBtn.textContent = 'Download'
+          downloadBtn.style.background = '#7c3aed'
+          downloadBtn.style.color = '#fff'
+          downloadBtn.style.padding = '8px 12px'
+          downloadBtn.style.borderRadius = '6px'
+          downloadBtn.style.border = 'none'
 
           const closeBtn = document.createElement('button') as HTMLButtonElement
+          closeBtn.type = 'button'
           closeBtn.textContent = 'Close'
           closeBtn.style.background = 'transparent'
           closeBtn.style.color = '#fff'
@@ -728,10 +733,28 @@ export default function Index() {
             try { URL.revokeObjectURL(url) } catch (e) { /* ignore */ }
           }
 
-          closeBtn.addEventListener('click', () => removeOverlay())
-          downloadLink.addEventListener('click', () => setTimeout(removeOverlay, 250))
+          // Defer creating the downloadable anchor until the user explicitly
+          // taps the Download button — this prevents some mobile browsers
+          // from auto-opening the download manager when the preview is shown.
+          downloadBtn.addEventListener('click', () => {
+            try {
+              const a = document.createElement('a')
+              a.href = url
+              a.download = 'maimai_b50_grid.png'
+              // Append to DOM for some browsers that require it for click()
+              document.body.appendChild(a)
+              a.click()
+              document.body.removeChild(a)
+            } catch (e) {
+              // Fallback: open the image in a new tab
+              try { window.open(url, '_blank') } catch (e) { /* ignore */ }
+            }
+            setTimeout(removeOverlay, 250)
+          })
 
-          controls.appendChild(downloadLink)
+          closeBtn.addEventListener('click', () => removeOverlay())
+
+          controls.appendChild(downloadBtn)
           controls.appendChild(closeBtn)
           modal.appendChild(img)
           modal.appendChild(controls)
