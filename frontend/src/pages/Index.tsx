@@ -30,6 +30,8 @@ import {
   Camera,
   Trash2,
   Info,
+  ChevronUp,
+  ChevronDown,
 } from 'lucide-react'
 
 const B50_KEY = 'maimai_b50_data'
@@ -62,6 +64,13 @@ interface SongInfo {
   version?: string
   chart_type?: string
   image_url?: string
+  analyzed_skills?: Record<string, {
+    Slide: { Total?: number; 'estimated difficulty'?: number }
+    Spin: { Total?: number; avg?: number }
+    Taps: { Total?: number; avg?: number }
+    Trills: { Total?: number; avg?: number }
+    chart_difficulty: number
+  }>
 }
 
 type SongsDict = Record<string, SongInfo>
@@ -352,42 +361,131 @@ interface SongTableProps {
   label: string
   songs: Song[]
   idPrefix: string
+  maimaiSongsDict?: SongsDict
+  sortColumn: string | null
+  sortDirection: 'asc' | 'desc'
+  onSort: (column: string) => void
+  skillSortType: 'slide' | 'spin' | 'taps' | 'trills'
+  onSkillSortTypeChange: (type: 'slide' | 'spin' | 'taps' | 'trills') => void
+  skillSortDir: 'asc' | 'desc'
+  onSkillSortDirChange: (dir: 'asc' | 'desc') => void
 }
 
-function SongTable({ songs, idPrefix }: SongTableProps) {
+function SongTable({ songs, idPrefix, maimaiSongsDict, sortColumn, sortDirection, onSort, skillSortType, onSkillSortTypeChange, skillSortDir, onSkillSortDirChange }: SongTableProps) {
+  const getSkillData = (songName: string, diffType: string) => {
+    if (!maimaiSongsDict) return null
+    const canonical = (() => {
+      if (maimaiSongsDict[songName]) return songName
+      const foundInDict = Object.keys(maimaiSongsDict).find(k => k.toLowerCase() === songName.toLowerCase())
+      return foundInDict || songName
+    })()
+    const songInfo = maimaiSongsDict[canonical]
+    return songInfo?.analyzed_skills?.[diffType] || null
+  }
+
+  const sortedSongs = useMemo(() => {
+    if (!sortColumn) return songs
+    return [...songs].sort((a, b) => {
+      let aVal: number | string | null = null
+      let bVal: number | string | null = null
+      const skillA = getSkillData(a.song_name, a.difficulty_type)
+      const skillB = getSkillData(b.song_name, b.difficulty_type)
+      const skillSortMap: Record<string, { totalKey: string; avgKey: string }> = {
+        slide: { totalKey: 'Slide.Total', avgKey: 'Slide.estimated difficulty' },
+        spin: { totalKey: 'Spin.Total', avgKey: 'Spin.avg' },
+        taps: { totalKey: 'Taps.Total', avgKey: 'Taps.avg' },
+        trills: { totalKey: 'Trills.Total', avgKey: 'Trills.avg' },
+      }
+      const sortKey = skillSortMap[skillSortType]?.totalKey
+
+      switch (sortColumn) {
+        case 'index': aVal = songs.indexOf(a); bVal = songs.indexOf(b); break
+        case 'clear': aVal = a.clear_type || ''; bVal = b.clear_type || ''; break
+        case 'name': aVal = a.song_name.toLowerCase(); bVal = b.song_name.toLowerCase(); break
+        case 'difficulty': aVal = a.difficulty_type; bVal = b.difficulty_type; break
+        case 'rank': aVal = renderRankElement(a.rank)?.props?.children || ''; bVal = renderRankElement(b.rank)?.props?.children || ''; break
+        case 'achievement': aVal = parseFloat(String(a.achievement)); bVal = parseFloat(String(b.achievement)); break
+        case 'chartDiff': aVal = parseFloat(String(a.chart_difficulty)); bVal = parseFloat(String(b.chart_difficulty)); break
+        case 'rating': aVal = a.calculated_rating; bVal = b.calculated_rating; break
+        case 'skillRating': {
+          const parts = sortKey.split('.')
+          aVal = parts.reduce((obj: any, key) => obj?.[key], skillA) || 0
+          bVal = parts.reduce((obj: any, key) => obj?.[key], skillB) || 0
+          break
+        }
+        default: return 0
+      }
+      const actualDir = sortColumn === 'skillRating' ? skillSortDir : sortDirection
+      if (typeof aVal === 'string' && typeof bVal === 'string') {
+        return actualDir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal)
+      }
+      return actualDir === 'asc' ? (aVal as number) - (bVal as number) : (bVal as number) - (aVal as number)
+    })
+  }, [songs, sortColumn, sortDirection, maimaiSongsDict, skillSortType, skillSortDir])
+
+  const SortIcon = ({ col }: { col: string }) => {
+    const isActive = sortColumn === col
+    const iconDir = col === 'skillRating' ? (isActive ? skillSortDir : 'asc') : sortDirection
+    return isActive ? (iconDir === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />) : <ChevronUp className="h-3 w-3 opacity-30" />
+  }
+
   return (
     <Table id={`${idPrefix}Header`} className="table-fixed">
       <TableHeader>
         <TableRow>
-          <TableHead className="w-8">#</TableHead>
-          <TableHead className="w-12 text-center">Clear</TableHead>
-          <TableHead className="w-[320px]">Song Name</TableHead>
-          <TableHead className="w-28">Difficulty</TableHead>
-          <TableHead className="w-20">Rank</TableHead>
-          <TableHead className="w-36">Achievement</TableHead>
-          <TableHead className="w-28 text-center">Chart Difficulty</TableHead>
-          <TableHead className="w-36 text-center">Calculated Rating</TableHead>
+          <TableHead className="w-8 cursor-pointer select-none" onClick={() => onSort('index')}><div className="flex items-center gap-1"># <SortIcon col="index" /></div></TableHead>
+          <TableHead className="w-12 text-center cursor-pointer select-none" onClick={() => onSort('clear')}><div className="flex items-center justify-center gap-1">Clear <SortIcon col="clear" /></div></TableHead>
+          <TableHead className="w-[200px] cursor-pointer select-none" onClick={() => onSort('name')}><div className="flex items-center gap-1">Song Name <SortIcon col="name" /></div></TableHead>
+          <TableHead className="w-24 cursor-pointer select-none" onClick={() => onSort('difficulty')}><div className="flex items-center gap-1">Difficulty <SortIcon col="difficulty" /></div></TableHead>
+          <TableHead className="w-16 cursor-pointer select-none" onClick={() => onSort('rank')}><div className="flex items-center gap-1">Rank <SortIcon col="rank" /></div></TableHead>
+          <TableHead className="w-28 cursor-pointer select-none" onClick={() => onSort('achievement')}><div className="flex items-center gap-1">Achievement <SortIcon col="achievement" /></div></TableHead>
+          <TableHead className="w-20 text-center cursor-pointer select-none" onClick={() => onSort('chartDiff')}><div className="flex items-center justify-center gap-1">Chart Diff <SortIcon col="chartDiff" /></div></TableHead>
+          <TableHead className="w-24 text-center cursor-pointer select-none" onClick={() => onSort('rating')}><div className="flex items-center justify-center gap-1">Rating <SortIcon col="rating" /></div></TableHead>
+          <TableHead className="w-40 text-center relative" onMouseLeave={(e) => { const menu = e.currentTarget.querySelector('.skill-sort-menu') as HTMLElement; if (menu) menu.style.display = 'none' }} onMouseEnter={(e) => { const menu = e.currentTarget.querySelector('.skill-sort-menu') as HTMLElement; if (menu) menu.style.display = 'block' }}>
+                    <div className="flex items-center justify-center gap-1 cursor-pointer select-none" onClick={() => onSort('skillRating')}>Skills Rating <SortIcon col="skillRating" />
+                    </div>
+                    <div className="skill-sort-menu absolute z-50 mt-1 bg-background border rounded shadow-md text-xs hidden" onClick={(e) => e.stopPropagation()}>
+                      <div className="px-2 py-1 cursor-pointer hover:bg-muted font-medium" onClick={() => onSkillSortDirChange(skillSortDir === 'asc' ? 'desc' : 'asc')}>Dir: {skillSortDir === 'asc' ? '↑ Top' : '↓ Bottom'}</div>
+                      <div className={`px-2 py-1 cursor-pointer hover:bg-muted ${skillSortType === 'slide' ? 'bg-muted font-medium' : ''}`} onClick={() => { onSkillSortTypeChange('slide'); onSort('skillRating') }}>Slide</div>
+                      <div className={`px-2 py-1 cursor-pointer hover:bg-muted ${skillSortType === 'spin' ? 'bg-muted font-medium' : ''}`} onClick={() => { onSkillSortTypeChange('spin'); onSort('skillRating') }}>Spin</div>
+                      <div className={`px-2 py-1 cursor-pointer hover:bg-muted ${skillSortType === 'taps' ? 'bg-muted font-medium' : ''}`} onClick={() => { onSkillSortTypeChange('taps'); onSort('skillRating') }}>Taps</div>
+                      <div className={`px-2 py-1 cursor-pointer hover:bg-muted ${skillSortType === 'trills' ? 'bg-muted font-medium' : ''}`} onClick={() => { onSkillSortTypeChange('trills'); onSort('skillRating') }}>Trills</div>
+                    </div>
+                  </TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
-        {songs.length === 0
-          ? <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">No songs added yet.</TableCell></TableRow>
-          : songs.map((s, i) => (
-            <TableRow key={i} className={isNewChart(s, {}) ? 'new-chart-row' : 'old-chart-row'}>
-              <TableCell className="text-muted-foreground text-xs w-8">{i + 1}</TableCell>
-              <TableCell className="w-12 text-center">
-                {s.clear_type && CLEAR_ICONS[s.clear_type] ? (
-                  <img src={CLEAR_ICONS[s.clear_type]} alt={String(s.clear_type)} className="table-clear-icon" />
-                ) : null}
-              </TableCell>
-              <TableCell className="font-medium max-w-[320px] truncate">{s.song_name}</TableCell>
-              <TableCell className="w-28">{s.difficulty_type}</TableCell>
-              <TableCell className="w-20">{renderRankElement(s.rank)}</TableCell>
-              <TableCell className="w-36">{parseFloat(String(s.achievement)).toFixed(4)}%</TableCell>
-              <TableCell className="w-28 text-center">{parseFloat(String(s.chart_difficulty)).toFixed(1)}</TableCell>
-              <TableCell className="font-semibold text-primary w-36 text-center">{s.calculated_rating}</TableCell>
-            </TableRow>
-          ))}
+        {sortedSongs.length === 0
+          ? <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">No songs added yet.</TableCell></TableRow>
+          : sortedSongs.map((s, i) => {
+            const skillData = getSkillData(s.song_name, s.difficulty_type)
+            return (
+              <TableRow key={i} className={isNewChart(s, {}) ? 'new-chart-row' : 'old-chart-row'}>
+                <TableCell className="text-muted-foreground text-xs w-8">{i + 1}</TableCell>
+                <TableCell className="w-12 text-center">
+                  {s.clear_type && CLEAR_ICONS[s.clear_type] ? (
+                    <img src={CLEAR_ICONS[s.clear_type]} alt={String(s.clear_type)} className="table-clear-icon" />
+                  ) : null}
+                </TableCell>
+                <TableCell className="font-medium max-w-[200px] truncate">{s.song_name}</TableCell>
+                <TableCell className="w-24">{s.difficulty_type}</TableCell>
+                <TableCell className="w-16">{renderRankElement(s.rank)}</TableCell>
+                <TableCell className="w-28">{parseFloat(String(s.achievement)).toFixed(4)}%</TableCell>
+                <TableCell className="w-20 text-center">{parseFloat(String(s.chart_difficulty)).toFixed(1)}</TableCell>
+                <TableCell className="font-semibold text-primary w-24 text-center">{s.calculated_rating}</TableCell>
+                <TableCell className="w-32 text-center text-xs">
+                  {skillData ? (
+                    <div className="text-left pl-2">
+                      <div>Slide: {skillData.Slide?.Total?.toFixed(0) || '-'} ({skillData.Slide?.['estimated difficulty']?.toFixed(0) || '-'})</div>
+                      <div>Spin: {skillData.Spin?.Total?.toFixed(0) || '-'} ({skillData.Spin?.avg?.toFixed(0) || '-'})</div>
+                      <div>Taps: {skillData.Taps?.Total?.toFixed(0) || '-'} ({skillData.Taps?.avg?.toFixed(0) || '-'})</div>
+                      <div>Trills: {skillData.Trills?.Total?.toFixed(0) || '-'} ({skillData.Trills?.avg?.toFixed(0) || '-'})</div>
+                    </div>
+                  ) : '-'}
+                </TableCell>
+              </TableRow>
+            )
+          })}
       </TableBody>
     </Table>
   )
@@ -418,6 +516,19 @@ export default function Index() {
   const [nameFilter, setNameFilter] = useState('')
   const [versionFilter, setVersionFilter] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
+  const [sortColumn, setSortColumn] = useState<string | null>(null)
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
+  const [skillSortType, setSkillSortType] = useState<'slide' | 'spin' | 'taps' | 'trills'>('slide')
+  const [skillSortDir, setSkillSortDir] = useState<'asc' | 'desc'>('asc')
+
+  const handleSort = useCallback((column: string) => {
+    if (sortColumn === column) {
+      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortColumn(column)
+      setSortDirection('asc')
+    }
+  }, [sortColumn])
 
   const b50FileRef = useRef<HTMLInputElement>(null)
   const cacheFileRef = useRef<HTMLInputElement>(null)
@@ -1395,7 +1506,7 @@ export default function Index() {
               <div className="px-4 py-3 border-b bg-muted/30">
                 <h2 className="text-sm font-semibold">Filtered Songs — {combinedFiltered.length} chart scores</h2>
               </div>
-              <SongTable label="Filtered Songs" songs={combinedFiltered} idPrefix="combined" />
+              <SongTable label="Filtered Songs" songs={combinedFiltered} idPrefix="combined" maimaiSongsDict={maimaiSongsDict} sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSort} skillSortType={skillSortType} onSkillSortTypeChange={setSkillSortType} skillSortDir={skillSortDir} onSkillSortDirChange={setSkillSortDir} />
             </div>
           ) : (
             <div className="rounded-xl border bg-card shadow-sm overflow-hidden mb-6">
@@ -1412,7 +1523,7 @@ export default function Index() {
                 <div className="px-4 py-3 border-b bg-muted/30">
                   <h2 className="text-sm font-semibold">Old Songs — All {fullData?.old_songs?.length ?? display.old_songs.length} chart scores</h2>
                 </div>
-                <SongTable label="Old Songs" songs={filteredTableOld} idPrefix="old" />
+                <SongTable label="Old Songs" songs={filteredTableOld} idPrefix="old" maimaiSongsDict={maimaiSongsDict} sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSort} skillSortType={skillSortType} onSkillSortTypeChange={setSkillSortType} skillSortDir={skillSortDir} onSkillSortDirChange={setSkillSortDir} />
               </div>
             )}
             {filteredTableNew.length > 0 && (
@@ -1420,7 +1531,7 @@ export default function Index() {
                 <div className="px-4 py-3 border-b bg-muted/30">
                   <h2 className="text-sm font-semibold">New Songs — All {fullData?.new_songs?.length ?? display.new_songs.length} chart scores</h2>
                 </div>
-                <SongTable label="New Songs" songs={filteredTableNew} idPrefix="new" />
+                <SongTable label="New Songs" songs={filteredTableNew} idPrefix="new" maimaiSongsDict={maimaiSongsDict} sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSort} skillSortType={skillSortType} onSkillSortTypeChange={setSkillSortType} skillSortDir={skillSortDir} onSkillSortDirChange={setSkillSortDir} />
               </div>
             )}
           </>

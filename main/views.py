@@ -348,6 +348,7 @@ def calculator_list(request):
             'version': song.version or '',
             'chart_type': song.chart_type or '',
             'image_url': song.image_url or '',
+            'analyzed_skills': song.get_analyzed_skills() or {},
         }
         for title, song in maimai_songs_dict.items()
     }
@@ -413,7 +414,172 @@ def database_upload(request):
             message = f"Error processing file: {e}"
         request.session['db_upload_message'] = message
         return redirect('database_upload')
-    return {'message': request.session.pop('db_upload_message', '')}
+    return {
+        'message': request.session.pop('db_upload_message', ''),
+        'skill_import_message': request.session.pop('skill_import_message', '')
+    }
+
+
+DIFFICULTY_FIELD_MAP = {
+    "Basic": "lev_bas",
+    "Advanced": "lev_adv",
+    "Expert": "lev_exp",
+    "Master": "lev_mas",
+    "Re:Master": "lev_remas",
+}
+
+def import_skill_analyzer(request):
+    """Import skill analyzer JSON file and update analyzed_skills in database."""
+    if request.method == 'POST' and request.FILES.get('json_file'):
+        try:
+            json_file = request.FILES['json_file']
+
+            try:
+                file_content = json_file.read()
+                if isinstance(file_content, bytes):
+                    file_content = file_content.decode('utf-8')
+                skill_data = json.loads(file_content)
+            except json.JSONDecodeError:
+                message = 'Invalid JSON file format.'
+                request.session['skill_import_message'] = message
+                return redirect('database_upload')
+            except UnicodeDecodeError:
+                message = 'Unable to decode file. Please ensure it\'s a valid UTF-8 encoded JSON file.'
+                request.session['skill_import_message'] = message
+                return redirect('database_upload')
+
+            updated_count = 0
+            not_found = []
+
+            import re
+
+            def _normalize_title_for_matching(s):
+                if not s:
+                    return ''
+                s = s.strip()
+                replacements = {
+                    '～': '~', '〜': '~', '（': '(', '）': ')', '　': ' ',
+                    '５': '5', '４': '4', '３': '3', '２': '2', '１': '1', '０': '0',
+                    '！': '!', '？': '?', '＋': '+', '－': '-', '＝': '=',
+                }
+                for k, v in replacements.items():
+                    s = s.replace(k, v)
+                s = re.sub(r'\s+', ' ', s).strip()
+                s = re.sub(r'\s*\[(?:DX|ST|STD)\]\s*$', '', s, flags=re.IGNORECASE)
+                return s
+
+            entry_title_map = {}
+            for idx, entry in enumerate(skill_data):
+                chart_name = entry.get('chart', '').strip()
+                if not chart_name:
+                    continue
+
+                difficulties = entry.get('difficulties', [])
+                if not difficulties:
+                    continue
+
+                canonical_base = _normalize_title_for_matching(chart_name)
+                
+                explicit_tag = None
+                m = re.search(r'\[(DX)\]', chart_name, re.IGNORECASE)
+                if m:
+                    explicit_tag = 'DX'
+                else:
+                    m2 = re.search(r'\[(ST|STD)\]', chart_name, re.IGNORECASE)
+                    if m2:
+                        explicit_tag = 'ST'
+
+                entry_title_map[canonical_base] = entry_title_map.get(canonical_base, [])
+                entry_title_map[canonical_base].append({
+                    'index': idx,
+                    'original_title': chart_name,
+                    'explicit_tag': explicit_tag,
+                    'entry': entry,
+                })
+
+            for canonical_base, entries in entry_title_map.items():
+                if len(entries) >= 2:
+                    tagged = [e for e in entries if e['explicit_tag']]
+                    untagged = [e for e in entries if not e['explicit_tag']]
+
+                    if tagged and untagged:
+                        display_base = re.sub(r'\s*\[(?:DX|ST|STD)\]\s*$', '', entries[0]['original_title'], flags=re.IGNORECASE).strip()
+
+                        for t_entry in tagged:
+                            if not untagged:
+                                break
+                            u_entry = untagged.pop(0)
+                            t_tag = t_entry['explicit_tag']
+
+                            if t_tag == 'DX':
+                                new_untagged_title = f"{display_base} [STD]"
+                                u_entry['matched_title'] = new_untagged_title
+                                t_entry['matched_title'] = t_entry['original_title']
+                            else:
+                                new_tagged_title = f"{display_base} [STD]"
+                                new_untagged_title = f"{display_base} [DX]"
+                                t_entry['matched_title'] = new_tagged_title
+                                u_entry['matched_title'] = new_untagged_title
+                else:
+                    for e in entries:
+                        e['matched_title'] = e['original_title']
+
+            for base_entries in entry_title_map.values():
+                for e in base_entries:
+                    chart_name = e['matched_title']
+                    entry = e['entry']
+                    difficulties = entry.get('difficulties', [])
+                    if not difficulties:
+                        continue
+
+                    song = find_maimai_song_by_title(chart_name)
+
+                    if not song:
+                        print(f"Chart not found in database: {chart_name}")
+                        not_found.append(chart_name)
+                        continue
+
+                    analyzed_skills = {}
+                    for diff_entry in difficulties:
+                        diff_type = diff_entry.get('difficulty type', '')
+
+                        field_name = DIFFICULTY_FIELD_MAP.get(diff_type)
+                        if not field_name:
+                            continue
+
+                        chart_difficulty = getattr(song, field_name, None)
+                        if not chart_difficulty:
+                            continue
+
+                        analyzed_skills[diff_type] = {
+                            'Slide': diff_entry.get('Slide', {}),
+                            'Spin': diff_entry.get('Spin', {}),
+                            'Taps': diff_entry.get('Taps', {}),
+                            'Trills': diff_entry.get('Trills', {}),
+                            'chart_difficulty': float(chart_difficulty) if chart_difficulty else 0.0
+                        }
+
+                    if analyzed_skills:
+                        song.set_analyzed_skills(analyzed_skills)
+                        song.save()
+                        updated_count += 1
+
+            message = f"Import successful. Updated {updated_count} songs."
+            if not_found:
+                message += f" {len(not_found)} songs not found in database."
+
+            request.session['skill_import_message'] = message
+            return redirect('database_upload')
+
+        except Exception as e:
+            import traceback
+            message = f'Error processing file: {str(e)}'
+            request.session['skill_import_message'] = message
+            return redirect('database_upload')
+
+    message = 'No JSON file uploaded or invalid request method.'
+    request.session['skill_import_message'] = message
+    return redirect('database_upload')
 
 def save_b50_data(request):
     """Export B50 data from localStorage as JSON file for download."""
@@ -1247,7 +1413,23 @@ def chart_database(request):
             'chartType': chart_type,
             'difficulty': difficulty,
         },
+        'maimaiSongsDict': build_maimai_songs_dict(),
     }
+
+def build_maimai_songs_dict():
+    maimai_songs_dict = {}
+    for song in MaimaiSong.objects.all():
+        if song.title:
+            # Debug: log Oshama Scramble values being read
+            if 'Oshama' in song.title:
+                print(f"DEBUG Read - {song.title}: analyzed_skills = {song.get_analyzed_skills()}")
+            maimai_songs_dict[song.title] = {
+                'version': song.version or '',
+                'chart_type': song.chart_type or '',
+                'image_url': song.image_url or '',
+                'analyzed_skills': song.get_analyzed_skills() or {},
+            }
+    return maimai_songs_dict
 
 def download_chart_database(request):
     """Export the entire chart database as JSON file for download."""

@@ -4,6 +4,7 @@ from . import views
 urlpatterns = [
 	path('', views.calculator_list, name='calculator_list'),
     path('databaseUpload/', views.database_upload, name='database_upload'),
+    path('import-skill-analyzer/', views.import_skill_analyzer, name='import_skill_analyzer'),
     path('chart-database/', views.chart_database, name='chart_database'),
     path('chart-database/download/', views.download_chart_database, name='download_chart_database'),
     path('chart-database/alias-upload/', views.alias_upload, name='alias_upload'),

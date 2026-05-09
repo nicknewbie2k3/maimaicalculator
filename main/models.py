@@ -48,6 +48,7 @@ class MaimaiSong(models.Model):
     version = models.CharField(max_length=100, blank=True, null=True)
     chart_type = models.CharField(max_length=10, blank=True, null=True)  # Added for [STD]/[DX] distinction
     aliases = models.TextField(blank=True, null=True)  # JSON field to store multiple aliases
+    analyzed_skills = models.TextField(blank=True, null=True)  # JSON field to store analyzed skills data
 
     def __str__(self):
         return f"{self.title} ({self.version}, {self.chart_type})"
@@ -66,3 +67,18 @@ class MaimaiSong(models.Model):
         """Set aliases from a list."""
         import json
         self.aliases = json.dumps(aliases_list) if aliases_list else None
+
+    def get_analyzed_skills(self):
+        """Return analyzed_skills as a dict."""
+        if self.analyzed_skills:
+            try:
+                import json
+                return json.loads(self.analyzed_skills)
+            except (json.JSONDecodeError, TypeError):
+                return {}
+        return {}
+
+    def set_analyzed_skills(self, skills_dict):
+        """Set analyzed_skills from a dict."""
+        import json
+        self.analyzed_skills = json.dumps(skills_dict) if skills_dict else None

@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useMemo } from 'react'
 import { usePage, router, Link } from '@inertiajs/react'
 import MainLayout from '../layouts/MainLayout'
 import { Button } from '@/components/ui/button'
@@ -29,6 +29,22 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { Download, FileUp, Tag, X, Info } from 'lucide-react'
+
+interface AnalyzedSkill {
+  Slide?: { Total?: number; 'estimated difficulty'?: number }
+  Spin?: { Total?: number; avg?: number }
+  Taps?: { Total?: number; avg?: number }
+  Trills?: { Total?: number; avg?: number }
+}
+
+interface SongInfo {
+  version?: string
+  chart_type?: string
+  image_url?: string
+  analyzed_skills?: Record<string, AnalyzedSkill>
+}
+
+type SongsDict = Record<string, SongInfo>
 
 interface DbSong {
   id: number
@@ -77,6 +93,7 @@ interface ChartDatabasePageProps {
   filterCatcodes: string[]
   aliasToTitleMap: Record<string, string>
   currentFilters: Filters
+  maimaiSongsDict: SongsDict
 }
 
 interface AutocompleteProps {
@@ -191,7 +208,7 @@ function Autocomplete({ id, value, onChange, options, aliasMap, placeholder }: A
 }
 
 export default function ChartDatabase() {
-  const { songs, pagination, filterTitles, filterVersions, filterArtists, filterCatcodes, aliasToTitleMap, currentFilters } =
+  const { songs, pagination, filterTitles, filterVersions, filterArtists, filterCatcodes, aliasToTitleMap, currentFilters, maimaiSongsDict } =
     usePage().props as unknown as ChartDatabasePageProps
 
   const [filters, setFilters] = useState<Filters>(currentFilters)
@@ -227,6 +244,10 @@ export default function ChartDatabase() {
     params.set('page', String(p))
     return `/chart-database/?${params.toString()}`
   }
+
+  const sortedSongs = useMemo(() => {
+    return songs
+  }, [songs])
 
   function showAliasMsg(msg: string, type: string, ms = 3000) {
     clearTimeout(statusTimer.current)
@@ -369,13 +390,14 @@ export default function ChartDatabase() {
                 <TableHead>Exp</TableHead>
                 <TableHead>Mas</TableHead>
                 <TableHead>Re:Mas</TableHead>
+                <TableHead className="w-44">Skills Rating</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {songs.length === 0
-                ? <TableRow><TableCell colSpan={12} className="text-center text-muted-foreground py-12">No songs found.</TableCell></TableRow>
-                : songs.map((s, i) => (
+                ? <TableRow><TableCell colSpan={13} className="text-center text-muted-foreground py-12">No songs found.</TableCell></TableRow>
+                : sortedSongs.map((s, i) => (
                   <TableRow key={s.id}>
                     <TableCell className="text-muted-foreground text-xs">{pagination.startIndex + i}</TableCell>
                     <TableCell className="font-medium max-w-[180px]">
@@ -401,6 +423,30 @@ export default function ChartDatabase() {
                     <TableCell>{s.lev_exp ? <span className="inline-block rounded px-1.5 py-0.5 text-xs font-semibold bg-red-100 text-red-700">{s.lev_exp}</span> : <span className="text-muted-foreground text-xs">—</span>}</TableCell>
                     <TableCell>{s.lev_mas ? <span className="inline-block rounded px-1.5 py-0.5 text-xs font-semibold bg-purple-100 text-purple-700">{s.lev_mas}</span> : <span className="text-muted-foreground text-xs">—</span>}</TableCell>
                     <TableCell>{s.lev_remas ? <span className="inline-block rounded px-1.5 py-0.5 text-xs font-semibold bg-fuchsia-100 text-fuchsia-700">{s.lev_remas}</span> : <span className="text-muted-foreground text-xs">—</span>}</TableCell>
+                    <TableCell className="w-44 text-xs">
+                      {(() => {
+                        const difficulties = [
+                          { name: 'Basic', lev: s.lev_bas },
+                          { name: 'Adv', lev: s.lev_adv },
+                          { name: 'Exp', lev: s.lev_exp },
+                          { name: 'Mas', lev: s.lev_mas },
+                          { name: 'Re:Mas', lev: s.lev_remas },
+                        ]
+                        return (
+                          <div className="text-left pl-1">
+                            {difficulties.map(({ name, lev }) => {
+                              const data = lev && maimaiSongsDict?.[s.title]?.analyzed_skills?.[name]
+                              if (!data) return null
+                              return (
+                                <div key={name} className="mb-0.5">
+                                  <span className="text-muted-foreground">{name}:</span> {data.Slide?.Total?.toFixed(0) || '-'}/{data.Spin?.Total?.toFixed(0) || '-'}/{data.Taps?.Total?.toFixed(0) || '-'}/{data.Trills?.Total?.toFixed(0) || '-'}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )
+                      })()}
+                    </TableCell>
                     <TableCell>
                       <Button size="sm" variant="outline" onClick={() => openModal(s)}>
                         <Tag data-icon="inline-start" />
