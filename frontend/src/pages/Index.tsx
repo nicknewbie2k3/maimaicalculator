@@ -127,8 +127,10 @@ interface AutocompleteProps {
 function Autocomplete({ id, value, onChange, options, aliasMap, placeholder }: AutocompleteProps) {
   const [items, setItems] = useState<DropdownItem[]>([])
   const wrapperRef = useRef<HTMLDivElement | null>(null)
+  const dropdownRef = useRef<HTMLDivElement | null>(null)
   const [rect, setRect] = useState<DOMRect | null>(null)
   const [mounted, setMounted] = useState(false)
+  const timerRef = useRef<number>(0)
 
   useEffect(() => { setMounted(true); return () => setMounted(false) }, [])
 
@@ -176,14 +178,17 @@ function Autocomplete({ id, value, onChange, options, aliasMap, placeholder }: A
     if (!items.length) return
     function onDocClick(e: MouseEvent) {
       if (!wrapperRef.current) return
-      if (!wrapperRef.current.contains(e.target as Node)) setItems([])
+      const t = e.target as Node
+      if (wrapperRef.current.contains(t)) return
+      if (dropdownRef.current && dropdownRef.current.contains(t)) return
+      setItems([])
     }
     document.addEventListener('mousedown', onDocClick)
     return () => document.removeEventListener('mousedown', onDocClick)
   }, [items])
 
   const dropdown = items.length > 0 && rect ? (
-    <div style={{ position: 'absolute', left: rect.left + window.scrollX, top: rect.bottom + window.scrollY, width: rect.width, zIndex: 100000 }}>
+    <div ref={dropdownRef} style={{ position: 'absolute', left: rect.left + window.scrollX, top: rect.bottom + window.scrollY, width: rect.width, zIndex: 100000 }}>
       <div className="mt-1 max-h-48 overflow-y-auto rounded-lg border bg-popover text-popover-foreground shadow-md">
         {items.map((m, i) => (
           <button
@@ -208,7 +213,7 @@ function Autocomplete({ id, value, onChange, options, aliasMap, placeholder }: A
         value={value}
         placeholder={placeholder}
         autoComplete="off"
-        onChange={e => { onChange(e.target.value); build(e.target.value) }}
+        onChange={e => { onChange(e.target.value); clearTimeout(timerRef.current); timerRef.current = window.setTimeout(() => build(e.target.value), 300) }}
       />
       {mounted && dropdown && createPortal(dropdown, document.body)}
     </div>
@@ -503,9 +508,9 @@ export default function Index() {
   const [b50, setB50State] = useState<B50Data>({ old_songs: [], new_songs: [] })
   const [fullData, setFullDataState] = useState<B50Data | null>(null)
   const [status, setStatus] = useState<StatusState>({ msg: '', type: 'info', show: false })
-  const [songInput, setSongInput] = useState('')
   const [difficulty, setDifficulty] = useState('Basic')
   const [achievement, setAchievement] = useState('')
+  const [clearType, setClearType] = useState('')
   const [dropdown, setDropdown] = useState<DropdownItem[]>([])
   const [username, setUsername] = useState('')
   // Table filters (affect only the table view, not the grid).
@@ -533,7 +538,16 @@ export default function Index() {
   const b50FileRef = useRef<HTMLInputElement>(null)
   const cacheFileRef = useRef<HTMLInputElement>(null)
   const gridRef = useRef<HTMLDivElement>(null)
+  const songInputRef = useRef<HTMLInputElement>(null)
+  const achievementInputRef = useRef<HTMLInputElement>(null)
+  const chartConstMinRef = useRef<HTMLInputElement>(null)
+  const chartConstMaxRef = useRef<HTMLInputElement>(null)
   const statusTimerRef = useRef<number>(0)
+  const dropdownTimerRef = useRef<number>(0)
+  const chartMinTimerRef = useRef<number>(0)
+  const chartMaxTimerRef = useRef<number>(0)
+  const usernameTimerRef = useRef<number>(0)
+  const achievementTimerRef = useRef<number>(0)
 
   const showStatus = useCallback((msg: string, type: string, ms = 4000) => {
     clearTimeout(statusTimerRef.current)
@@ -596,9 +610,10 @@ export default function Index() {
   async function addSong(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const fd = new FormData()
-    fd.append('song_name', songInput)
+    fd.append('song_name', songInputRef.current?.value || '')
     fd.append('difficulty_type', difficulty)
-    fd.append('achievement', achievement)
+    fd.append('achievement', achievementInputRef.current?.value || '')
+    fd.append('clear_type', clearType)
     fd.append('csrfmiddlewaretoken', getCsrf())
     try {
       const res = await fetch('/', { method: 'POST', body: fd })
@@ -625,7 +640,7 @@ export default function Index() {
       full.old_songs.sort((a, b) => b.calculated_rating - a.calculated_rating)
       full.new_songs.sort((a, b) => b.calculated_rating - a.calculated_rating)
       writeFull(full)
-      setSongInput(''); setAchievement('')
+      if (songInputRef.current) songInputRef.current.value = ''; if (achievementInputRef.current) achievementInputRef.current.value = ''; setAchievement(''); setClearType('')
     } catch (err) { console.error(err) }
   }
 
@@ -1221,7 +1236,7 @@ export default function Index() {
               id="username-input"
               type="text"
               value={username}
-              onChange={e => updateUsername((e.target as HTMLInputElement).value)}
+              onChange={e => { const v = (e.target as HTMLInputElement).value; setUsername(v); clearTimeout(usernameTimerRef.current); usernameTimerRef.current = window.setTimeout(() => localStorage.setItem(USERNAME_KEY, v), 300) }}
               placeholder="Your name"
               className="h-8 w-40"
               maxLength={32}
@@ -1271,13 +1286,15 @@ export default function Index() {
             <div className="flex flex-col gap-1.5 flex-1 min-w-[200px]">
               <Label htmlFor="song-input">Song Name</Label>
               <div className="relative">
-                <Input
+                <input
                   id="song-input"
                   type="text"
-                  value={songInput}
+                  ref={songInputRef}
+                  defaultValue=""
                   required
-                  onChange={e => { const v = (e.target as HTMLInputElement).value; setSongInput(v); buildDropdown(v); }}
+                  onChange={e => { clearTimeout(dropdownTimerRef.current); dropdownTimerRef.current = window.setTimeout(() => buildDropdown((e.target as HTMLInputElement).value), 300) }}
                   placeholder="Song Name or Alias"
+                  className="h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
                 />
                 {dropdown.length > 0 && (
                   <div className="absolute top-full left-0 right-0 z-50 mt-1 max-h-48 overflow-y-auto rounded-lg border bg-popover text-popover-foreground shadow-md">
@@ -1286,7 +1303,7 @@ export default function Index() {
                         key={i}
                         type="button"
                         className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground transition-colors"
-                        onClick={() => { setSongInput(m.value); setDropdown([]) }}
+                        onClick={() => { if (songInputRef.current) songInputRef.current.value = m.value; setDropdown([]) }}
                       >
                         {m.value}
                         {m.type === 'fuzzy' && <span className="text-muted-foreground text-xs ml-1">({m.sim}% match)</span>}
@@ -1313,18 +1330,36 @@ export default function Index() {
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="achievement-input">Achievement (%)</Label>
-              <Input
+              <input
                 id="achievement-input"
                 type="number"
-                className="w-36"
+                className="h-8 w-36 min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
                 step="0.0001"
                 min="0"
                 max="101"
-                value={achievement}
+                ref={achievementInputRef}
+                defaultValue=""
                 required
-                onChange={e => setAchievement((e.target as HTMLInputElement).value)}
+                onChange={e => { clearTimeout(achievementTimerRef.current); achievementTimerRef.current = window.setTimeout(() => setAchievement((e.target as HTMLInputElement).value), 300) }}
                 placeholder="e.g. 100.5"
               />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label>Badge</Label>
+              <Select value={clearType} onValueChange={(v) => setClearType(v ?? '')}>
+                <SelectTrigger className="w-28">
+                  <SelectValue placeholder="None" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectItem value="">None</SelectItem>
+                    <SelectItem value="FC">FC</SelectItem>
+                    <SelectItem value="FC+">FC+</SelectItem>
+                    <SelectItem value="AP" disabled={parseFloat(achievement || '0') < 100.5}>AP</SelectItem>
+                    <SelectItem value="AP+" disabled={parseFloat(achievement || '0') < 101}>AP+</SelectItem>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
             </div>
             <Button type="submit">Add Song</Button>
           </form>
@@ -1420,12 +1455,12 @@ export default function Index() {
 
               <div className="flex flex-col gap-1.5">
                 <Label>Chart Const Min</Label>
-                <Input type="number" value={chartConstMin} onChange={e => setChartConstMin((e.target as HTMLInputElement).value)} placeholder="Min" className="w-28" />
+                <Input type="number" ref={chartConstMinRef} defaultValue="" onChange={e => { clearTimeout(chartMinTimerRef.current); chartMinTimerRef.current = window.setTimeout(() => setChartConstMin((e.target as HTMLInputElement).value), 300) }} placeholder="Min" className="w-28" />
               </div>
 
               <div className="flex flex-col gap-1.5">
                 <Label>Chart Const Max</Label>
-                <Input type="number" value={chartConstMax} onChange={e => setChartConstMax((e.target as HTMLInputElement).value)} placeholder="Max" className="w-28" />
+                <Input type="number" ref={chartConstMaxRef} defaultValue="" onChange={e => { clearTimeout(chartMaxTimerRef.current); chartMaxTimerRef.current = window.setTimeout(() => setChartConstMax((e.target as HTMLInputElement).value), 300) }} placeholder="Max" className="w-28" />
               </div>
 
               <div className="flex flex-col gap-1.5">

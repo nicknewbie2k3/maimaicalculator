@@ -296,6 +296,21 @@ def calculator_list(request):
             except Exception:
                 raw_clear_int = None
 
+            # Determine clear_type label from POST data
+            clear_type_label = None
+            if raw_clear_int == 3:
+                clear_type_label = 'FC'
+            elif raw_clear_int == 4:
+                clear_type_label = 'FC+'
+            elif raw_clear_int == 5:
+                clear_type_label = 'AP'
+            elif raw_clear_int == 6:
+                clear_type_label = 'AP+'
+            elif isinstance(raw_clear_post, str) and raw_clear_post.strip():
+                clear_str = raw_clear_post.strip().upper()
+                if clear_str in ('FC', 'FC+', 'AP', 'AP+'):
+                    clear_type_label = clear_str
+
             # Apply +1 bonus for AP/AP+ if indicated
             try:
                 rating_int = int(calculated_rating)
@@ -313,7 +328,8 @@ def calculator_list(request):
                 'achievement': float(achievement),
                 'chart_difficulty': float(chart_difficulty),
                 'calculated_rating': rating_int,
-                'version': version
+                'version': version,
+                'clear_type': clear_type_label,
             }
             
             return JsonResponse({'status': 'success', 'song_data': song_data})
