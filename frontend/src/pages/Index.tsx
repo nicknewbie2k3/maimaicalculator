@@ -55,6 +55,54 @@ const CLEAR_ICONS: Record<string, string> = {
   'AP+': '/static/image/music_icon_app.png',
 }
 
+const RANK_CONST: Record<string, number> = {
+  'B': 9.6,
+  '2B': 11.2,
+  '3B': 12,
+  'A': 13.6,
+  '2A': 15.2,
+  '3A': 16.8,
+  'S': 20,
+  'S+': 20.3,
+  '2S': 20.8,
+  '2S+': 21.1,
+  '3S': 21.6,
+  '3S+': 22.4,
+}
+
+function getRankConst(rank: string, clearType: string | null | undefined): number {
+  if (clearType === 'AP') return 30
+  if (clearType === 'AP+') return 31
+  return RANK_CONST[rank] ?? 0
+}
+
+function computeSkillRating(chartDiff: number, rankConst: number, skillValue: number): number {
+  return (chartDiff - 11) * rankConst * skillValue / 100
+}
+
+const SKILL_LEVEL_CONST: Record<string, number> = {
+  slide: 500,
+  spin: 400,
+  taps: 700,
+  trills: 300,
+}
+
+function computeSkillLevel(avgRating: number, baseConst: number): number {
+  if (avgRating <= 0 || baseConst <= 0) return 0
+  return Math.floor(Math.log(avgRating / baseConst) / Math.log(1.1))
+}
+
+function getSongSkillData(maimaiSongsDict: SongsDict, songName: string, diffType: string) {
+  if (!maimaiSongsDict) return null
+  const canonical = (() => {
+    if (maimaiSongsDict[songName]) return songName
+    const foundInDict = Object.keys(maimaiSongsDict).find(k => k.toLowerCase() === songName.toLowerCase())
+    return foundInDict || songName
+  })()
+  const songInfo = maimaiSongsDict[canonical]
+  return songInfo?.analyzed_skills?.[diffType] || null
+}
+
 interface B50Data {
   old_songs: Song[]
   new_songs: Song[]
@@ -378,14 +426,7 @@ interface SongTableProps {
 
 function SongTable({ songs, idPrefix, maimaiSongsDict, sortColumn, sortDirection, onSort, skillSortType, onSkillSortTypeChange, skillSortDir, onSkillSortDirChange }: SongTableProps) {
   const getSkillData = (songName: string, diffType: string) => {
-    if (!maimaiSongsDict) return null
-    const canonical = (() => {
-      if (maimaiSongsDict[songName]) return songName
-      const foundInDict = Object.keys(maimaiSongsDict).find(k => k.toLowerCase() === songName.toLowerCase())
-      return foundInDict || songName
-    })()
-    const songInfo = maimaiSongsDict[canonical]
-    return songInfo?.analyzed_skills?.[diffType] || null
+    return getSongSkillData(maimaiSongsDict, songName, diffType)
   }
 
   const sortedSongs = useMemo(() => {
@@ -413,9 +454,15 @@ function SongTable({ songs, idPrefix, maimaiSongsDict, sortColumn, sortDirection
         case 'chartDiff': aVal = parseFloat(String(a.chart_difficulty)); bVal = parseFloat(String(b.chart_difficulty)); break
         case 'rating': aVal = a.calculated_rating; bVal = b.calculated_rating; break
         case 'skillRating': {
+          const aCD = parseFloat(String(a.chart_difficulty)) || 0
+          const bCD = parseFloat(String(b.chart_difficulty)) || 0
+          const aRC = getRankConst(a.rank, a.clear_type)
+          const bRC = getRankConst(b.rank, b.clear_type)
           const parts = sortKey.split('.')
-          aVal = parts.reduce((obj: any, key) => obj?.[key], skillA) || 0
-          bVal = parts.reduce((obj: any, key) => obj?.[key], skillB) || 0
+          const aRaw = parts.reduce((obj: any, key) => obj?.[key], skillA) || 0
+          const bRaw = parts.reduce((obj: any, key) => obj?.[key], skillB) || 0
+          aVal = computeSkillRating(aCD, aRC, aRaw)
+          bVal = computeSkillRating(bCD, bRC, bRaw)
           break
         }
         default: return 0
@@ -479,14 +526,26 @@ function SongTable({ songs, idPrefix, maimaiSongsDict, sortColumn, sortDirection
                 <TableCell className="w-20 text-center">{parseFloat(String(s.chart_difficulty)).toFixed(1)}</TableCell>
                 <TableCell className="font-semibold text-primary w-24 text-center">{s.calculated_rating}</TableCell>
                 <TableCell className="w-32 text-center text-xs">
-                  {skillData ? (
-                    <div className="text-left pl-2">
-                      <div>Slide: {skillData.Slide?.Total?.toFixed(0) || '-'} ({skillData.Slide?.['estimated difficulty']?.toFixed(0) || '-'})</div>
-                      <div>Spin: {skillData.Spin?.Total?.toFixed(0) || '-'} ({skillData.Spin?.avg?.toFixed(0) || '-'})</div>
-                      <div>Taps: {skillData.Taps?.Total?.toFixed(0) || '-'} ({skillData.Taps?.avg?.toFixed(0) || '-'})</div>
-                      <div>Trills: {skillData.Trills?.Total?.toFixed(0) || '-'} ({skillData.Trills?.avg?.toFixed(0) || '-'})</div>
-                    </div>
-                  ) : '-'}
+                  {skillData ? (() => {
+                    const cd = parseFloat(String(s.chart_difficulty)) || 0
+                    const rc = getRankConst(s.rank, s.clear_type)
+                    const slideTotal = computeSkillRating(cd, rc, skillData.Slide?.Total ?? 0)
+                    const slideAvg = computeSkillRating(cd, rc, skillData.Slide?.['estimated difficulty'] ?? 0)
+                    const spinTotal = computeSkillRating(cd, rc, skillData.Spin?.Total ?? 0)
+                    const spinAvg = computeSkillRating(cd, rc, skillData.Spin?.avg ?? 0)
+                    const tapsTotal = computeSkillRating(cd, rc, skillData.Taps?.Total ?? 0)
+                    const tapsAvg = computeSkillRating(cd, rc, skillData.Taps?.avg ?? 0)
+                    const trillsTotal = computeSkillRating(cd, rc, skillData.Trills?.Total ?? 0)
+                    const trillsAvg = computeSkillRating(cd, rc, skillData.Trills?.avg ?? 0)
+                    return (
+                      <div className="text-left pl-2">
+                        <div>Slide: {slideTotal.toFixed(0)} ({slideAvg.toFixed(0)})</div>
+                        <div>Spin: {spinTotal.toFixed(0)} ({spinAvg.toFixed(0)})</div>
+                        <div>Taps: {tapsTotal.toFixed(0)} ({tapsAvg.toFixed(0)})</div>
+                        <div>Trills: {trillsTotal.toFixed(0)} ({trillsAvg.toFixed(0)})</div>
+                      </div>
+                    )
+                  })() : '-'}
                 </TableCell>
               </TableRow>
             )
@@ -1109,11 +1168,48 @@ export default function Index() {
   const oldAvg = oldCount > 0 ? Math.round(oldRating / oldCount) : 0
   const newAvg = newCount > 0 ? Math.round(newRating / newCount) : 0
 
-  const oldPad: (Song | null)[] = [...display.old_songs]; while (oldPad.length < 35) oldPad.push(null)
-  const newPad: (Song | null)[] = [...display.new_songs]; while (newPad.length < 15) newPad.push(null)
-
   const tableOld = fullData?.old_songs?.length ? fullData.old_songs : display.old_songs
   const tableNew = fullData?.new_songs?.length ? fullData.new_songs : display.new_songs
+
+  const skillsetAvgs = useMemo(() => {
+    const allSongs = [...tableOld, ...tableNew]
+    const slideAvgs: number[] = []
+    const spinAvgs: number[] = []
+    const tapsAvgs: number[] = []
+    const trillsAvgs: number[] = []
+    for (const song of allSongs) {
+      const skillData = getSongSkillData(maimaiSongsDict, song.song_name, song.difficulty_type)
+      if (!skillData) continue
+      const cd = parseFloat(String(song.chart_difficulty)) || 0
+      const rc = getRankConst(song.rank, song.clear_type)
+      if (skillData.Slide?.['estimated difficulty']) slideAvgs.push(computeSkillRating(cd, rc, skillData.Slide['estimated difficulty']))
+      if (skillData.Spin?.avg) spinAvgs.push(computeSkillRating(cd, rc, skillData.Spin.avg))
+      if (skillData.Taps?.avg) tapsAvgs.push(computeSkillRating(cd, rc, skillData.Taps.avg))
+      if (skillData.Trills?.avg) trillsAvgs.push(computeSkillRating(cd, rc, skillData.Trills.avg))
+    }
+    const topAvg = (arr: number[]) => {
+      const sorted = [...arr].sort((a, b) => b - a)
+      const top50 = sorted.slice(0, 50)
+      if (top50.length === 0) return 0
+      return top50.reduce((s, v) => s + v, 0) / top50.length
+    }
+    return {
+      slide: topAvg(slideAvgs),
+      spin: topAvg(spinAvgs),
+      taps: topAvg(tapsAvgs),
+      trills: topAvg(trillsAvgs),
+    }
+  }, [tableOld, tableNew, maimaiSongsDict])
+
+  const skillsetLevels = useMemo(() => ({
+    slide: computeSkillLevel(skillsetAvgs.slide, SKILL_LEVEL_CONST.slide),
+    spin: computeSkillLevel(skillsetAvgs.spin, SKILL_LEVEL_CONST.spin),
+    taps: computeSkillLevel(skillsetAvgs.taps, SKILL_LEVEL_CONST.taps),
+    trills: computeSkillLevel(skillsetAvgs.trills, SKILL_LEVEL_CONST.trills),
+  }), [skillsetAvgs])
+
+  const oldPad: (Song | null)[] = [...display.old_songs]; while (oldPad.length < 35) oldPad.push(null)
+  const newPad: (Song | null)[] = [...display.new_songs]; while (newPad.length < 15) newPad.push(null)
 
   const versions = useMemo(() => {
     const s = new Set<string>()
@@ -1431,6 +1527,36 @@ export default function Index() {
                 </div>
               </>
             )}
+          </div>
+        </div>
+        )}
+
+        {count > 0 && (
+        <div className="rounded-xl border bg-card shadow-sm mb-6 overflow-hidden">
+          <div className="px-5 py-4">
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Skillset Averages (Top 50)</span>
+            <div className="flex items-center gap-3 mt-2 flex-wrap">
+              <div className="rounded-lg px-3 py-1.5 text-center" style={{ background: 'rgba(239,68,68,0.6)', border: '1px solid rgba(239,68,68,0.8)' }}>
+                <div className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#ef4444' }}>Slide</div>
+                <div className="text-lg font-black leading-none mt-0.5" style={{ color: '#fff' }}>{skillsetAvgs.slide.toFixed(1)}</div>
+                <div className="b50-small-stat">Lv. {skillsetLevels.slide}</div>
+              </div>
+              <div className="rounded-lg px-3 py-1.5 text-center" style={{ background: 'rgba(59,130,246,0.6)', border: '1px solid rgba(59,130,246,0.8)' }}>
+                <div className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#3b82f6' }}>Spin</div>
+                <div className="text-lg font-black leading-none mt-0.5" style={{ color: '#fff' }}>{skillsetAvgs.spin.toFixed(1)}</div>
+                <div className="b50-small-stat">Lv. {skillsetLevels.spin}</div>
+              </div>
+              <div className="rounded-lg px-3 py-1.5 text-center" style={{ background: 'rgba(34,197,94,0.6)', border: '1px solid rgba(34,197,94,0.8)' }}>
+                <div className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#22c55e' }}>Taps</div>
+                <div className="text-lg font-black leading-none mt-0.5" style={{ color: '#fff' }}>{skillsetAvgs.taps.toFixed(1)}</div>
+                <div className="b50-small-stat">Lv. {skillsetLevels.taps}</div>
+              </div>
+              <div className="rounded-lg px-3 py-1.5 text-center" style={{ background: 'rgba(168,85,247,0.6)', border: '1px solid rgba(168,85,247,0.8)' }}>
+                <div className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#a855f7' }}>Trills</div>
+                <div className="text-lg font-black leading-none mt-0.5" style={{ color: '#fff' }}>{skillsetAvgs.trills.toFixed(1)}</div>
+                <div className="b50-small-stat">Lv. {skillsetLevels.trills}</div>
+              </div>
+            </div>
           </div>
         </div>
         )}
