@@ -81,10 +81,10 @@ function computeSkillRating(chartDiff: number, rankConst: number, skillValue: nu
 }
 
 const SKILL_LEVEL_CONST: Record<string, number> = {
-  slide: 500,
-  spin: 400,
-  taps: 700,
-  trills: 300,
+  slide: 2149,
+  spin: 1306,
+  taps: 3832,
+  trills: 1033,
 }
 
 function computeSkillLevel(avgRating: number, baseConst: number): number {
@@ -100,7 +100,11 @@ function getSongSkillData(maimaiSongsDict: SongsDict, songName: string, diffType
     return foundInDict || songName
   })()
   const songInfo = maimaiSongsDict[canonical]
-  return songInfo?.analyzed_skills?.[diffType] || null
+  const skills = songInfo?.analyzed_skills
+  if (!skills) return null
+  if (skills[diffType]) return skills[diffType]
+  const found = Object.keys(skills).find(k => k.toLowerCase() === diffType.toLowerCase())
+  return found ? skills[found] : null
 }
 
 interface B50Data {
@@ -420,11 +424,13 @@ interface SongTableProps {
   onSort: (column: string) => void
   skillSortType: 'slide' | 'spin' | 'taps' | 'trills'
   onSkillSortTypeChange: (type: 'slide' | 'spin' | 'taps' | 'trills') => void
+  skillSortMetric: 'total' | 'avg'
+  onSkillSortMetricChange: (metric: 'total' | 'avg') => void
   skillSortDir: 'asc' | 'desc'
   onSkillSortDirChange: (dir: 'asc' | 'desc') => void
 }
 
-function SongTable({ songs, idPrefix, maimaiSongsDict, sortColumn, sortDirection, onSort, skillSortType, onSkillSortTypeChange, skillSortDir, onSkillSortDirChange }: SongTableProps) {
+function SongTable({ songs, idPrefix, maimaiSongsDict, sortColumn, sortDirection, onSort, skillSortType, onSkillSortTypeChange, skillSortMetric, onSkillSortMetricChange, skillSortDir, onSkillSortDirChange }: SongTableProps) {
   const getSkillData = (songName: string, diffType: string) => {
     return getSongSkillData(maimaiSongsDict, songName, diffType)
   }
@@ -442,7 +448,7 @@ function SongTable({ songs, idPrefix, maimaiSongsDict, sortColumn, sortDirection
         taps: { totalKey: 'Taps.Total', avgKey: 'Taps.avg' },
         trills: { totalKey: 'Trills.Total', avgKey: 'Trills.avg' },
       }
-      const sortKey = skillSortMap[skillSortType]?.totalKey
+      const sortKey = skillSortMetric === 'avg' ? skillSortMap[skillSortType]?.avgKey : skillSortMap[skillSortType]?.totalKey
 
       switch (sortColumn) {
         case 'index': aVal = songs.indexOf(a); bVal = songs.indexOf(b); break
@@ -473,7 +479,7 @@ function SongTable({ songs, idPrefix, maimaiSongsDict, sortColumn, sortDirection
       }
       return actualDir === 'asc' ? (aVal as number) - (bVal as number) : (bVal as number) - (aVal as number)
     })
-  }, [songs, sortColumn, sortDirection, maimaiSongsDict, skillSortType, skillSortDir])
+  }, [songs, sortColumn, sortDirection, maimaiSongsDict, skillSortType, skillSortMetric, skillSortDir])
 
   const SortIcon = ({ col }: { col: string }) => {
     const isActive = sortColumn === col
@@ -498,6 +504,7 @@ function SongTable({ songs, idPrefix, maimaiSongsDict, sortColumn, sortDirection
                     </div>
                     <div className="skill-sort-menu absolute z-50 mt-1 bg-background border rounded shadow-md text-xs hidden" onClick={(e) => e.stopPropagation()}>
                       <div className="px-2 py-1 cursor-pointer hover:bg-muted font-medium" onClick={() => onSkillSortDirChange(skillSortDir === 'asc' ? 'desc' : 'asc')}>Dir: {skillSortDir === 'asc' ? '↑ Top' : '↓ Bottom'}</div>
+                      <div className="px-2 py-1 cursor-pointer hover:bg-muted font-medium" onClick={() => onSkillSortMetricChange(skillSortMetric === 'total' ? 'avg' : 'total')}>Metric: {skillSortMetric === 'total' ? 'Total' : 'Avg'}</div>
                       <div className={`px-2 py-1 cursor-pointer hover:bg-muted ${skillSortType === 'slide' ? 'bg-muted font-medium' : ''}`} onClick={() => { onSkillSortTypeChange('slide'); onSort('skillRating') }}>Slide</div>
                       <div className={`px-2 py-1 cursor-pointer hover:bg-muted ${skillSortType === 'spin' ? 'bg-muted font-medium' : ''}`} onClick={() => { onSkillSortTypeChange('spin'); onSort('skillRating') }}>Spin</div>
                       <div className={`px-2 py-1 cursor-pointer hover:bg-muted ${skillSortType === 'taps' ? 'bg-muted font-medium' : ''}`} onClick={() => { onSkillSortTypeChange('taps'); onSort('skillRating') }}>Taps</div>
@@ -583,6 +590,7 @@ export default function Index() {
   const [sortColumn, setSortColumn] = useState<string | null>(null)
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
   const [skillSortType, setSkillSortType] = useState<'slide' | 'spin' | 'taps' | 'trills'>('slide')
+  const [skillSortMetric, setSkillSortMetric] = useState<'total' | 'avg'>('total')
   const [skillSortDir, setSkillSortDir] = useState<'asc' | 'desc'>('asc')
 
   const handleSort = useCallback((column: string) => {
@@ -1667,7 +1675,7 @@ export default function Index() {
               <div className="px-4 py-3 border-b bg-muted/30">
                 <h2 className="text-sm font-semibold">Filtered Songs — {combinedFiltered.length} chart scores</h2>
               </div>
-              <SongTable label="Filtered Songs" songs={combinedFiltered} idPrefix="combined" maimaiSongsDict={maimaiSongsDict} sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSort} skillSortType={skillSortType} onSkillSortTypeChange={setSkillSortType} skillSortDir={skillSortDir} onSkillSortDirChange={setSkillSortDir} />
+              <SongTable label="Filtered Songs" songs={combinedFiltered} idPrefix="combined" maimaiSongsDict={maimaiSongsDict} sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSort} skillSortType={skillSortType} onSkillSortTypeChange={setSkillSortType} skillSortMetric={skillSortMetric} onSkillSortMetricChange={setSkillSortMetric} skillSortDir={skillSortDir} onSkillSortDirChange={setSkillSortDir} />
             </div>
           ) : (
             <div className="rounded-xl border bg-card shadow-sm overflow-hidden mb-6">
@@ -1684,7 +1692,7 @@ export default function Index() {
                 <div className="px-4 py-3 border-b bg-muted/30">
                   <h2 className="text-sm font-semibold">Old Songs — All {fullData?.old_songs?.length ?? display.old_songs.length} chart scores</h2>
                 </div>
-                <SongTable label="Old Songs" songs={filteredTableOld} idPrefix="old" maimaiSongsDict={maimaiSongsDict} sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSort} skillSortType={skillSortType} onSkillSortTypeChange={setSkillSortType} skillSortDir={skillSortDir} onSkillSortDirChange={setSkillSortDir} />
+                <SongTable label="Old Songs" songs={filteredTableOld} idPrefix="old" maimaiSongsDict={maimaiSongsDict} sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSort} skillSortType={skillSortType} onSkillSortTypeChange={setSkillSortType} skillSortMetric={skillSortMetric} onSkillSortMetricChange={setSkillSortMetric} skillSortDir={skillSortDir} onSkillSortDirChange={setSkillSortDir} />
               </div>
             )}
             {filteredTableNew.length > 0 && (
@@ -1692,7 +1700,7 @@ export default function Index() {
                 <div className="px-4 py-3 border-b bg-muted/30">
                   <h2 className="text-sm font-semibold">New Songs — All {fullData?.new_songs?.length ?? display.new_songs.length} chart scores</h2>
                 </div>
-                <SongTable label="New Songs" songs={filteredTableNew} idPrefix="new" maimaiSongsDict={maimaiSongsDict} sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSort} skillSortType={skillSortType} onSkillSortTypeChange={setSkillSortType} skillSortDir={skillSortDir} onSkillSortDirChange={setSkillSortDir} />
+                <SongTable label="New Songs" songs={filteredTableNew} idPrefix="new" maimaiSongsDict={maimaiSongsDict} sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSort} skillSortType={skillSortType} onSkillSortTypeChange={setSkillSortType} skillSortMetric={skillSortMetric} onSkillSortMetricChange={setSkillSortMetric} skillSortDir={skillSortDir} onSkillSortDirChange={setSkillSortDir} />
               </div>
             )}
           </>

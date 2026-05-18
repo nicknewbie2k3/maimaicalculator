@@ -390,7 +390,7 @@ export default function ChartDatabase() {
                 <TableHead>Exp</TableHead>
                 <TableHead>Mas</TableHead>
                 <TableHead>Re:Mas</TableHead>
-                <TableHead className="w-44">Skills Rating</TableHead>
+                <TableHead className="w-60">Skills Rating</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -423,23 +423,30 @@ export default function ChartDatabase() {
                     <TableCell>{s.lev_exp ? <span className="inline-block rounded px-1.5 py-0.5 text-xs font-semibold bg-red-100 text-red-700">{s.lev_exp}</span> : <span className="text-muted-foreground text-xs">—</span>}</TableCell>
                     <TableCell>{s.lev_mas ? <span className="inline-block rounded px-1.5 py-0.5 text-xs font-semibold bg-purple-100 text-purple-700">{s.lev_mas}</span> : <span className="text-muted-foreground text-xs">—</span>}</TableCell>
                     <TableCell>{s.lev_remas ? <span className="inline-block rounded px-1.5 py-0.5 text-xs font-semibold bg-fuchsia-100 text-fuchsia-700">{s.lev_remas}</span> : <span className="text-muted-foreground text-xs">—</span>}</TableCell>
-                    <TableCell className="w-44 text-xs">
+                    <TableCell className="w-60 text-xs">
                       {(() => {
                         const difficulties = [
                           { name: 'Basic', lev: s.lev_bas },
-                          { name: 'Adv', lev: s.lev_adv },
-                          { name: 'Exp', lev: s.lev_exp },
-                          { name: 'Mas', lev: s.lev_mas },
-                          { name: 'Re:Mas', lev: s.lev_remas },
+                          { name: 'Advanced', lev: s.lev_adv },
+                          { name: 'Expert', lev: s.lev_exp },
+                          { name: 'Master', lev: s.lev_mas },
+                          { name: 'Re:Master', lev: s.lev_remas },
                         ]
+                        const AP_PLUS = 31
+                        const calc = (lev: number, val: number) => (parseFloat(String(lev)) - 11) * AP_PLUS * val / 100
                         return (
                           <div className="text-left pl-1">
                             {difficulties.map(({ name, lev }) => {
                               const data = lev && maimaiSongsDict?.[s.title]?.analyzed_skills?.[name]
                               if (!data) return null
+                              const cd = parseFloat(String(lev))
                               return (
                                 <div key={name} className="mb-0.5">
-                                  <span className="text-muted-foreground">{name}:</span> {data.Slide?.Total?.toFixed(0) || '-'}/{data.Spin?.Total?.toFixed(0) || '-'}/{data.Taps?.Total?.toFixed(0) || '-'}/{data.Trills?.Total?.toFixed(0) || '-'}
+                                  <span className="text-muted-foreground">{name}:</span>{' '}
+                                  S:{calc(cd, data.Slide?.Total ?? 0).toFixed(0)}({calc(cd, data.Slide?.['estimated difficulty'] ?? 0).toFixed(0)}){' '}
+                                  Sp:{calc(cd, data.Spin?.Total ?? 0).toFixed(0)}({calc(cd, data.Spin?.avg ?? 0).toFixed(0)}){' '}
+                                  T:{calc(cd, data.Taps?.Total ?? 0).toFixed(0)}({calc(cd, data.Taps?.avg ?? 0).toFixed(0)}){' '}
+                                  Tr:{calc(cd, data.Trills?.Total ?? 0).toFixed(0)}({calc(cd, data.Trills?.avg ?? 0).toFixed(0)})
                                 </div>
                               )
                             })}

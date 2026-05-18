@@ -441,6 +441,7 @@ DIFFICULTY_FIELD_MAP = {
     "Advanced": "lev_adv",
     "Expert": "lev_exp",
     "Master": "lev_mas",
+    "Remaster": "lev_remas",
     "Re:Master": "lev_remas",
 }
 
@@ -1948,6 +1949,10 @@ def convert_cache_data_to_all_scores_format(cache_data):
                 
                 # Extract difficulty info
                 difficulty_alias = difficulty_obj.get('alias', '')
+                if not difficulty_alias:
+                    diff_id = difficulty_obj.get('id')
+                    id_to_alias = {1: 'Easy', 2: 'Basic', 3: 'Advanced', 4: 'Expert', 5: 'Master', 6: 'Re:Master'}
+                    difficulty_alias = id_to_alias.get(diff_id, '')
                 stats = difficulty_obj.get('stats', {})
                 
                 if not isinstance(stats, dict):
