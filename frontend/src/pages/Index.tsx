@@ -47,6 +47,7 @@ interface Song {
   calculated_rating: number
   version?: string
   clear_type?: string | null
+  playcount?: number
 }
 const CLEAR_ICONS: Record<string, string> = {
   'FC': '/static/image/music_icon_fc.png',
@@ -459,6 +460,7 @@ function SongTable({ songs, idPrefix, maimaiSongsDict, sortColumn, sortDirection
         case 'achievement': aVal = parseFloat(String(a.achievement)); bVal = parseFloat(String(b.achievement)); break
         case 'chartDiff': aVal = parseFloat(String(a.chart_difficulty)); bVal = parseFloat(String(b.chart_difficulty)); break
         case 'rating': aVal = a.calculated_rating; bVal = b.calculated_rating; break
+        case 'playcount': aVal = a.playcount ?? 0; bVal = b.playcount ?? 0; break
         case 'skillRating': {
           const aCD = parseFloat(String(a.chart_difficulty)) || 0
           const bCD = parseFloat(String(b.chart_difficulty)) || 0
@@ -499,6 +501,7 @@ function SongTable({ songs, idPrefix, maimaiSongsDict, sortColumn, sortDirection
           <TableHead className="w-28 cursor-pointer select-none" onClick={() => onSort('achievement')}><div className="flex items-center gap-1">Achievement <SortIcon col="achievement" /></div></TableHead>
           <TableHead className="w-20 text-center cursor-pointer select-none" onClick={() => onSort('chartDiff')}><div className="flex items-center justify-center gap-1">Chart Diff <SortIcon col="chartDiff" /></div></TableHead>
           <TableHead className="w-24 text-center cursor-pointer select-none" onClick={() => onSort('rating')}><div className="flex items-center justify-center gap-1">Rating <SortIcon col="rating" /></div></TableHead>
+          <TableHead className="w-20 text-center cursor-pointer select-none" onClick={() => onSort('playcount')}><div className="flex items-center justify-center gap-1">Plays <SortIcon col="playcount" /></div></TableHead>
           <TableHead className="w-40 text-center relative" onMouseLeave={(e) => { const menu = e.currentTarget.querySelector('.skill-sort-menu') as HTMLElement; if (menu) menu.style.display = 'none' }} onMouseEnter={(e) => { const menu = e.currentTarget.querySelector('.skill-sort-menu') as HTMLElement; if (menu) menu.style.display = 'block' }}>
                     <div className="flex items-center justify-center gap-1 cursor-pointer select-none" onClick={() => onSort('skillRating')}>Skills Rating <SortIcon col="skillRating" />
                     </div>
@@ -515,7 +518,7 @@ function SongTable({ songs, idPrefix, maimaiSongsDict, sortColumn, sortDirection
       </TableHeader>
       <TableBody>
         {sortedSongs.length === 0
-          ? <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">No songs added yet.</TableCell></TableRow>
+          ? <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground py-8">No songs added yet.</TableCell></TableRow>
           : sortedSongs.map((s, i) => {
             const skillData = getSkillData(s.song_name, s.difficulty_type)
             return (
@@ -532,6 +535,7 @@ function SongTable({ songs, idPrefix, maimaiSongsDict, sortColumn, sortDirection
                 <TableCell className="w-28">{parseFloat(String(s.achievement)).toFixed(4)}%</TableCell>
                 <TableCell className="w-20 text-center">{parseFloat(String(s.chart_difficulty)).toFixed(1)}</TableCell>
                 <TableCell className="font-semibold text-primary w-24 text-center">{s.calculated_rating}</TableCell>
+                <TableCell className="w-20 text-center">{s.playcount ?? '-'}</TableCell>
                 <TableCell className="w-32 text-center text-xs">
                   {skillData ? (() => {
                     const cd = parseFloat(String(s.chart_difficulty)) || 0

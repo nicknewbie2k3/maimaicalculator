@@ -2291,6 +2291,8 @@ def convert_cache_data_to_all_scores_format(cache_data):
                 elif raw_clear_int == 6:
                     clear_label = 'AP+'
 
+                playcount = stats.get('completePlays', 0)
+
                 # Apply +1 bonus to calculated rating for AP/AP+ clear types (clearType 5 or 6)
                 try:
                     rating_int = int(calculated_rating)
@@ -2308,7 +2310,8 @@ def convert_cache_data_to_all_scores_format(cache_data):
                     'chart_difficulty': float(chart_difficulty),
                     'calculated_rating': rating_int,
                     'version': version,
-                    'clear_type': clear_label
+                    'clear_type': clear_label,
+                    'playcount': playcount if playcount else 0,
                 }
                 
                 # Categorize as old or new song based on version
