@@ -919,8 +919,7 @@ export default function Index() {
           ;(cNode.style as any).webkitBackgroundClip = ''; (cNode.style as any).webkitTextFillColor = ''
           cNode.style.color = rankSolidColor(rankText)
         }
-        cNode.style.textShadow = oc.textShadow || ''; cNode.style.fontWeight = oc.fontWeight || ''
-        cNode.style.fontSize = oc.fontSize || ''; cNode.style.padding = oc.padding || ''
+        cNode.style.textShadow = oc.textShadow || ''
       }
 
       const w = clone.scrollWidth
