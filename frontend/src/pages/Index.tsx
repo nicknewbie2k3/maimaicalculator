@@ -872,6 +872,19 @@ export default function Index() {
       container.appendChild(clone)
       document.body.appendChild(container)
 
+      // Force fixed desktop layout regardless of device viewport
+      clone.querySelectorAll('.b50-grid').forEach(n => {
+        const el = n as HTMLElement
+        el.style.cssText = 'grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:10px!important;padding:14px!important;max-width:100%!important;grid-auto-rows:auto!important'
+      })
+      // Force explicit card sizing
+      clone.querySelectorAll('.song-card').forEach(n => {
+        const el = n as HTMLElement
+        el.style.width = '100%'
+        el.style.minHeight = '0'
+        el.style.aspectRatio = '3/2'
+      })
+
       // Neutralize fixed-position descendants
       Array.from(container.querySelectorAll('*')).forEach(n => {
         const nn = n as HTMLElement
