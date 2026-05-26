@@ -925,11 +925,7 @@ export default function Index() {
 
       const w = clone.scrollWidth
       const h = clone.scrollHeight
-      const isMobile = /Mobi|Android|iPhone|iPad|Mobile/i.test(navigator.userAgent) || window.innerWidth < 800
-      const MAX_DIM = isMobile ? 16000 : MAX
-      const devicePR = (typeof window !== 'undefined' && window.devicePixelRatio) ? window.devicePixelRatio : 1
-      const targetScale = isMobile ? Math.max(1, Math.min(devicePR, 3)) : 2
-      const scale = Math.min(targetScale, MAX_DIM / Math.max(w, h))
+      const scale = 2
 
       try { await new Promise(r => setTimeout(r, 50)) } catch (e) { /* ignore */ }
 
