@@ -772,407 +772,231 @@ export default function Index() {
 
   async function printB50() {
     if (!gridRef.current) return
-    showStatus('Generating image from fixed viewport...', 'info', 0)
+    showStatus('Generating B50 image...', 'info', 0)
     const el = gridRef.current
     if (!el) return
-    // Capture the entire B50 stage (includes player name and total rating)
+
     const prevOverflow = el.style.overflow
     const prevWidth = el.style.width
-
-    // Render the grid in a hidden, fixed-size offscreen container so output is consistent
+    const FRAME_W = 2000
+    const FRAME_H = 3250
     const FIXED_VIEWPORT_WIDTH = 1000
     const MAX = 32000
     let container: HTMLDivElement | null = null
+
+    function showPreviewFromUrl(url: string) {
+      const isMobile = /Mobi|Android|iPhone|iPad|Mobile/i.test(navigator.userAgent) || window.innerWidth < 800
+      const overlay = document.createElement('div') as HTMLDivElement
+      overlay.style.position = 'fixed'; overlay.style.left = '0'; overlay.style.top = '0'
+      overlay.style.width = '100%'; overlay.style.height = '100%'
+      overlay.style.display = 'flex'; overlay.style.overflow = 'auto'
+      overlay.style.setProperty('-webkit-overflow-scrolling', 'touch')
+      overlay.style.alignItems = isMobile ? 'flex-start' : 'center'
+      overlay.style.justifyContent = 'center'
+      overlay.style.background = 'rgba(0,0,0,0.6)'; overlay.style.zIndex = '2147483647'
+
+      const modal = document.createElement('div') as HTMLDivElement
+      modal.style.background = '#0b1020'; modal.style.padding = isMobile ? '0' : '12px'
+      modal.style.borderRadius = isMobile ? '0' : '8px'
+      modal.style.width = isMobile ? '90vw' : 'auto'
+      modal.style.maxWidth = isMobile ? '90vw' : '1000px'
+      modal.style.maxHeight = isMobile ? 'calc(100vh - 120px)' : 'calc(100% - 120px)'
+      modal.style.overflow = 'auto'; modal.style.boxShadow = '0 8px 20px rgba(0,0,0,0.6)'
+      modal.style.display = 'flex'; modal.style.flexDirection = 'column'; modal.style.alignItems = 'stretch'
+
+      const img = document.createElement('img') as HTMLImageElement
+      img.src = url
+      if (isMobile) {
+        img.style.width = '90vw'; img.style.height = 'auto'
+        img.style.maxWidth = '90vw'; img.style.maxHeight = 'calc(100vh - 140px)'
+        img.style.display = 'block'; img.style.margin = '0 auto'
+      } else {
+        img.style.width = 'auto'; img.style.height = 'auto'
+        img.style.maxWidth = '100%'; img.style.maxHeight = 'calc(100vh - 200px)'
+        img.style.objectFit = 'contain'; img.style.display = 'block'; img.style.margin = '0 auto'
+      }
+
+      const controls = document.createElement('div') as HTMLDivElement
+      controls.style.display = 'flex'; controls.style.justifyContent = 'flex-end'
+      controls.style.gap = '8px'; controls.style.marginTop = '10px'
+
+      const downloadBtn = document.createElement('button') as HTMLButtonElement
+      downloadBtn.type = 'button'; downloadBtn.textContent = 'Download'
+      downloadBtn.style.background = '#7c3aed'; downloadBtn.style.color = '#fff'
+      downloadBtn.style.padding = '8px 12px'; downloadBtn.style.borderRadius = '6px'; downloadBtn.style.border = 'none'
+
+      const closeBtn = document.createElement('button') as HTMLButtonElement
+      closeBtn.type = 'button'; closeBtn.textContent = 'Close'
+      closeBtn.style.background = 'transparent'; closeBtn.style.color = '#fff'
+      closeBtn.style.padding = '8px 12px'; closeBtn.style.border = '1px solid rgba(255,255,255,0.08)'; closeBtn.style.borderRadius = '6px'
+
+      const removeOverlay = () => {
+        if (overlay.parentNode) overlay.parentNode.removeChild(overlay)
+        try { URL.revokeObjectURL(url) } catch (e) { /* ignore */ }
+      }
+
+      downloadBtn.addEventListener('click', () => {
+        try {
+          const a = document.createElement('a'); a.href = url; a.download = 'maimai_b50_grid.png'
+          document.body.appendChild(a); a.click(); document.body.removeChild(a)
+        } catch (e) { try { window.open(url, '_blank') } catch (e) { /* ignore */ } }
+        setTimeout(removeOverlay, 250)
+      })
+
+      closeBtn.addEventListener('click', () => removeOverlay())
+      controls.appendChild(downloadBtn); controls.appendChild(closeBtn)
+      modal.appendChild(img); modal.appendChild(controls)
+      modal.addEventListener('click', e => e.stopPropagation())
+      overlay.addEventListener('click', () => removeOverlay())
+      overlay.appendChild(modal); document.body.appendChild(overlay)
+      showStatus('Preview ready — close to dismiss or click Download.', 'success')
+    }
+
     try {
-      // create offscreen container
+      // Create offscreen container + clone (same technique as original)
       container = document.createElement('div')
       container.classList.add('b50-print-clone')
-      container.style.position = 'fixed'
-      container.style.left = '-100000px'
-      container.style.top = '0'
-      container.style.width = `${FIXED_VIEWPORT_WIDTH}px`
-      container.style.overflow = 'visible'
-      container.style.visibility = 'visible'
-      container.style.zIndex = '2147483647'
-      // Do NOT force layout styles here; preserve live styling and instead
-      // crop the final canvas to the stage/grid bounding box so exported
-      // images match the live UI without mutating layout.
+      container.style.position = 'fixed'; container.style.left = '-100000px'; container.style.top = '0'
+      container.style.width = `${FIXED_VIEWPORT_WIDTH}px`; container.style.overflow = 'visible'
+      container.style.visibility = 'visible'; container.style.zIndex = '2147483647'
 
-      // clone the grid and sanitize styles that may vary per user
       const clone = el.cloneNode(true) as HTMLElement
       clone.querySelectorAll('[id]').forEach(n => n.removeAttribute('id'))
-      clone.style.width = '100%'
-      clone.style.boxSizing = 'border-box'
-      clone.style.transform = 'none'
-      clone.style.transition = 'none'
+      clone.style.width = '100%'; clone.style.boxSizing = 'border-box'
+      clone.style.transform = 'none'; clone.style.transition = 'none'
       clone.querySelectorAll('*').forEach(node => {
         const nn = node as HTMLElement
-        nn.style.transition = 'none'
-        nn.style.transform = 'none'
-        nn.style.willChange = 'auto'
+        nn.style.transition = 'none'; nn.style.transform = 'none'; nn.style.willChange = 'auto'
       })
 
       container.appendChild(clone)
       document.body.appendChild(container)
 
-      // Neutralize any fixed-position descendants inside the clone so they
-      // don't render relative to the real viewport. Keep layout stable.
-      try {
-        Array.from(container.querySelectorAll('*')).forEach(n => {
-          try {
-            const nn = n as HTMLElement
-            const cs = window.getComputedStyle(nn)
-            if (cs.position === 'fixed') {
-              nn.style.position = 'relative'
-              nn.style.top = 'auto'
-              nn.style.left = 'auto'
-            }
-          } catch (e) { /* ignore per-node errors */ }
-        })
-      } catch (e) { /* ignore */ }
-
-      // Copy a set of important computed style properties from the live
-      // grid into the clone. This greatly improves fidelity for the
-      // exported image without attempting to copy every single CSS
-      // property (which can break layout when applied verbatim).
-      try {
-        // Copy a conservative set of visual properties. Intentionally omit
-        // font-size/padding/margin/position-related properties so the
-        // `print-b50.css` stylesheet can enforce consistent exported layout
-        // (inline styles copied from computed styles would otherwise override it).
-        const propsToCopy = [
-          'color', 'background', 'background-image', 'background-color', 'background-size', 'background-position', 'background-clip', '-webkit-background-clip', '-webkit-text-fill-color',
-          'text-shadow', 'letter-spacing',
-          'border',
-          'display', 'align-items', 'justify-content', 'box-sizing', 'white-space', 'overflow', 'text-align', 'vertical-align', 'opacity', 'flex-direction', 'flex-wrap', 'gap'
-        ]
-
-        // Limit computed-style copying to a small set of selectors to
-        // reduce main-thread work on mobile devices.
-        const sel = '.song-card, .song-card-art, .song-card-info, .song-card-title, .song-card-meta, .song-card-const-group, .song-card-rank, .b50-stage, .b50-total, .b50-section-banner'
-        const origAll = Array.from(el.querySelectorAll(sel)) as HTMLElement[]
-        const cloneAll = Array.from(clone.querySelectorAll(sel)) as HTMLElement[]
-        const len = Math.min(origAll.length, cloneAll.length)
-        for (let i = 0; i < len; i++) {
-          try {
-            const o = origAll[i]
-            const c = cloneAll[i]
-            const oc = window.getComputedStyle(o)
-            for (const p of propsToCopy) {
-              const val = oc.getPropertyValue(p)
-              if (val && val !== 'initial' && val !== 'inherit') {
-                c.style.setProperty(p, val, oc.getPropertyPriority(p))
-              }
-            }
-          } catch (e) { /* ignore per-node copy errors */ }
+      // Neutralize fixed-position descendants
+      Array.from(container.querySelectorAll('*')).forEach(n => {
+        const nn = n as HTMLElement
+        if (window.getComputedStyle(nn).position === 'fixed') {
+          nn.style.position = 'relative'; nn.style.top = 'auto'; nn.style.left = 'auto'
         }
+      })
 
-        // As a robust fallback, ensure achievement text remains readable and
-        // try to preserve rank visuals where possible. html2canvas has
-        // well-known limits for background-clip:text so we still fall back
-        // to a solid color when necessary.
-        const DEFAULT_TEXT_COLOR = '#ffffff'
-        Array.from(clone.querySelectorAll('.song-card-ach')).forEach((n) => {
-          try {
-            const elA = n as HTMLElement
-            elA.style.color = DEFAULT_TEXT_COLOR
-            elA.style.backgroundImage = 'none'
-            elA.style.backgroundClip = 'unset'
-            ;(elA.style as any).webkitBackgroundClip = 'unset'
-            ;(elA.style as any).webkitTextFillColor = DEFAULT_TEXT_COLOR
-          } catch (e) { /* ignore per-node errors */ }
-        })
-
-        const origRanks = Array.from(el.querySelectorAll('.song-card-rank')) as HTMLElement[]
-        const cloneRanks = Array.from(clone.querySelectorAll('.song-card-rank')) as HTMLElement[]
-        for (let i = 0; i < cloneRanks.length; i++) {
-          const o = origRanks[i]
-          const cNode = cloneRanks[i]
-          if (!o || !cNode) continue
-          try {
-            const oc = window.getComputedStyle(o)
-            const bgImage = oc.getPropertyValue('background-image') || ''
-            const hasTextGradient = /gradient|linear-gradient|radial-gradient/i.test(bgImage)
-            if (!hasTextGradient) {
-              cNode.style.backgroundImage = oc.backgroundImage || ''
-              cNode.style.backgroundClip = oc.backgroundClip || ''
-              ;(cNode.style as any).webkitBackgroundClip = (oc as any).webkitBackgroundClip || ''
-              ;(cNode.style as any).webkitTextFillColor = (oc as any).webkitTextFillColor || ''
-            } else {
-              const rankText = (o.textContent || cNode.textContent || '').trim()
-              cNode.style.backgroundImage = 'none'
-              cNode.style.backgroundClip = 'unset'
-              ;(cNode.style as any).webkitBackgroundClip = ''
-              ;(cNode.style as any).webkitTextFillColor = ''
-              cNode.style.color = rankSolidColor(rankText)
-            }
-            cNode.style.textShadow = oc.textShadow || ''
-            cNode.style.fontWeight = oc.fontWeight || ''
-            cNode.style.fontSize = oc.fontSize || ''
-            cNode.style.padding = oc.padding || ''
-          } catch (e) { /* ignore per-node errors */ }
+      // Copy computed styles
+      const propsToCopy = ['color', 'background', 'background-image', 'background-color', 'background-size', 'background-position', 'background-clip', '-webkit-background-clip', '-webkit-text-fill-color', 'text-shadow', 'letter-spacing', 'border', 'display', 'align-items', 'justify-content', 'box-sizing', 'white-space', 'overflow', 'text-align', 'vertical-align', 'opacity', 'flex-direction', 'flex-wrap', 'gap']
+      const sel = '.song-card, .song-card-art, .song-card-info, .song-card-title, .song-card-meta, .song-card-const-group, .song-card-rank, .b50-stage, .b50-total, .b50-section-banner'
+      const origAll = Array.from(el.querySelectorAll(sel)) as HTMLElement[]
+      const cloneAll = Array.from(clone.querySelectorAll(sel)) as HTMLElement[]
+      for (let i = 0; i < Math.min(origAll.length, cloneAll.length); i++) {
+        const o = origAll[i], c = cloneAll[i]
+        const oc = window.getComputedStyle(o)
+        for (const p of propsToCopy) {
+          const val = oc.getPropertyValue(p)
+          if (val && val !== 'initial' && val !== 'inherit') c.style.setProperty(p, val, oc.getPropertyPriority(p))
         }
-      } catch (e) {
-        console.warn('Failed to copy computed styles for print clone:', e)
+      }
+
+      // Achievement text fallback
+      Array.from(clone.querySelectorAll('.song-card-ach')).forEach((n) => {
+        const elA = n as HTMLElement
+        elA.style.color = '#ffffff'; elA.style.backgroundImage = 'none'; elA.style.backgroundClip = 'unset'
+        ;(elA.style as any).webkitBackgroundClip = 'unset'; (elA.style as any).webkitTextFillColor = '#ffffff'
+      })
+
+      // Rank fallback
+      const origRanks = Array.from(el.querySelectorAll('.song-card-rank')) as HTMLElement[]
+      const cloneRanks = Array.from(clone.querySelectorAll('.song-card-rank')) as HTMLElement[]
+      for (let i = 0; i < cloneRanks.length; i++) {
+        const o = origRanks[i], cNode = cloneRanks[i]
+        if (!o || !cNode) continue
+        const oc = window.getComputedStyle(o)
+        if (!/gradient|linear-gradient|radial-gradient/i.test(oc.getPropertyValue('background-image') || '')) {
+          cNode.style.backgroundImage = oc.backgroundImage || ''
+          cNode.style.backgroundClip = oc.backgroundClip || ''
+          ;(cNode.style as any).webkitBackgroundClip = (oc as any).webkitBackgroundClip || ''
+          ;(cNode.style as any).webkitTextFillColor = (oc as any).webkitTextFillColor || ''
+        } else {
+          const rankText = (o.textContent || cNode.textContent || '').trim()
+          cNode.style.backgroundImage = 'none'; cNode.style.backgroundClip = 'unset'
+          ;(cNode.style as any).webkitBackgroundClip = ''; (cNode.style as any).webkitTextFillColor = ''
+          cNode.style.color = rankSolidColor(rankText)
+        }
+        cNode.style.textShadow = oc.textShadow || ''; cNode.style.fontWeight = oc.fontWeight || ''
+        cNode.style.fontSize = oc.fontSize || ''; cNode.style.padding = oc.padding || ''
       }
 
       const w = clone.scrollWidth
       const h = clone.scrollHeight
       const isMobile = /Mobi|Android|iPhone|iPad|Mobile/i.test(navigator.userAgent) || window.innerWidth < 800
       const MAX_DIM = isMobile ? 16000 : MAX
-      // Option A: on mobile, use the devicePixelRatio to improve output
-      // quality for testing. Cap the DPR to a reasonable value to avoid
-      // creating excessively large canvases on low-memory devices.
       const devicePR = (typeof window !== 'undefined' && window.devicePixelRatio) ? window.devicePixelRatio : 1
       const targetScale = isMobile ? Math.max(1, Math.min(devicePR, 3)) : 2
       const scale = Math.min(targetScale, MAX_DIM / Math.max(w, h))
 
-      // Yield briefly so the browser can render the 'Generating...' status
       try { await new Promise(r => setTimeout(r, 50)) } catch (e) { /* ignore */ }
 
-      // Ensure fonts are available and the clone uses the same font-family
-      // This improves text metrics and truncation fidelity in html2canvas output.
       try {
-        if ((document as any).fonts && (document as any).fonts.ready) {
-          // await fonts to avoid layout with fallback fonts
-          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-          // @ts-ignore
-          await (document as any).fonts.ready
-        }
-      } catch (e) { /* ignore font loading errors */ }
-      try { clone.style.fontFamily = window.getComputedStyle(document.documentElement).fontFamily || '' } catch (e) { /* ignore */ }
+        if ((document as any).fonts?.ready) await (document as any).fonts.ready
+      } catch (e) { /* ignore */ }
+      clone.style.fontFamily = window.getComputedStyle(document.documentElement).fontFamily || ''
 
       const bg = window.getComputedStyle(el).backgroundColor || '#0b1020'
       const canvas = await html2canvas(clone, {
-        backgroundColor: bg,
-        scale,
-        useCORS: true,
-        width: w,
-        height: h,
-        windowWidth: w,
-        windowHeight: h,
+        backgroundColor: bg, scale, useCORS: true,
+        width: w, height: h, windowWidth: w, windowHeight: h,
       })
 
-      // Crop the generated canvas to the visible stage (header -> last grid)
-      // then convert to a Blob and present a preview using an object URL.
+      // Crop to stage content
+      let finalCanvas: HTMLCanvasElement = canvas
       try {
-        let finalCanvas: HTMLCanvasElement = canvas
-        try {
-          const cloneRect = clone.getBoundingClientRect()
-          const firstChild = clone.firstElementChild as HTMLElement | null
-          const gridNodes = Array.from(clone.querySelectorAll('.b50-grid')) as HTMLElement[]
-
-          const startY = firstChild ? Math.max(0, firstChild.getBoundingClientRect().top - cloneRect.top) : 0
-          let endY = clone.scrollHeight
-          if (gridNodes.length > 0) {
-            const lastGrid = gridNodes[gridNodes.length - 1]
-            const lastBottom = lastGrid.getBoundingClientRect().bottom - cloneRect.top
-            endY = Math.min(clone.scrollHeight, Math.max(endY, lastBottom))
-          }
-
-          const safeStart = Math.max(0, Math.min(startY, clone.scrollHeight))
-          const safeEnd = Math.max(safeStart, Math.min(endY, clone.scrollHeight))
-
-          const sx = 0
-          const sy = Math.round(safeStart * scale)
-          const sw = Math.round(canvas.width)
-          const sh = Math.round((safeEnd - safeStart) * scale)
-
-          if (sh > 0 && sh <= canvas.height) {
-            const cropped = document.createElement('canvas')
-            cropped.width = sw
-            cropped.height = sh
-            const ctx = cropped.getContext('2d')
-            if (ctx) ctx.drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh)
-            finalCanvas = cropped
-          }
-        } catch (e) {
-          finalCanvas = canvas
+        const cloneRect = clone.getBoundingClientRect()
+        const firstChild = clone.firstElementChild as HTMLElement | null
+        const gridNodes = Array.from(clone.querySelectorAll('.b50-grid')) as HTMLElement[]
+        const startY = firstChild ? Math.max(0, firstChild.getBoundingClientRect().top - cloneRect.top) : 0
+        let endY = clone.scrollHeight
+        if (gridNodes.length > 0) {
+          endY = Math.min(clone.scrollHeight, Math.max(endY, gridNodes[gridNodes.length - 1].getBoundingClientRect().bottom - cloneRect.top))
         }
-
-        const showPreviewFromUrl = (url: string) => {
-          const overlay = document.createElement('div') as HTMLDivElement
-          overlay.style.position = 'fixed'
-          overlay.style.left = '0'
-          overlay.style.top = '0'
-          overlay.style.width = '100%'
-          overlay.style.height = '100%'
-          overlay.style.display = 'flex'
-          // allow scrolling so large images can be panned on small screens
-          overlay.style.overflow = 'auto'
-          overlay.style.setProperty('-webkit-overflow-scrolling', 'touch')
-          overlay.style.alignItems = isMobile ? 'flex-start' : 'center'
-          overlay.style.justifyContent = 'center'
-          overlay.style.background = 'rgba(0,0,0,0.6)'
-          overlay.style.zIndex = '2147483647'
-
-          const modal = document.createElement('div') as HTMLDivElement
-          modal.style.background = '#0b1020'
-          // mobile: let the overlay scroll and show the image at native output
-          modal.style.padding = isMobile ? '0' : '12px'
-          modal.style.borderRadius = isMobile ? '0' : '8px'
-          // On mobile show a viewport-scaled preview (90vw) while keeping
-          // the underlying image at high resolution for download.
-          modal.style.width = isMobile ? '90vw' : 'auto'
-          modal.style.maxWidth = isMobile ? '90vw' : '1000px'
-          modal.style.maxHeight = isMobile ? 'calc(100vh - 120px)' : 'calc(100% - 120px)'
-          modal.style.overflow = 'auto'
-          modal.style.boxShadow = '0 8px 20px rgba(0,0,0,0.6)'
-          modal.style.display = 'flex'
-          modal.style.flexDirection = 'column'
-          modal.style.alignItems = 'stretch'
-
-          const img = document.createElement('img') as HTMLImageElement
-          img.src = url
-          if (isMobile) {
-            // Preview scaled down to viewport width but remains high-res
-            img.style.width = '90vw'
-            img.style.height = 'auto'
-            img.style.maxWidth = '90vw'
-            img.style.maxHeight = 'calc(100vh - 140px)'
-            img.style.display = 'block'
-            img.style.margin = '0 auto'
-          } else {
-            // desktop: don't force width — preserve intrinsic aspect ratio
-            img.style.width = 'auto'
-            img.style.height = 'auto'
-            img.style.maxWidth = '100%'
-            img.style.maxHeight = 'calc(100vh - 200px)'
-            img.style.objectFit = 'contain'
-            img.style.display = 'block'
-            img.style.margin = '0 auto'
-          }
-
-          const controls = document.createElement('div') as HTMLDivElement
-          controls.style.display = 'flex'
-          controls.style.justifyContent = 'flex-end'
-          controls.style.gap = '8px'
-          controls.style.marginTop = '10px'
-
-          const downloadBtn = document.createElement('button') as HTMLButtonElement
-          downloadBtn.type = 'button'
-          downloadBtn.textContent = 'Download'
-          downloadBtn.style.background = '#7c3aed'
-          downloadBtn.style.color = '#fff'
-          downloadBtn.style.padding = '8px 12px'
-          downloadBtn.style.borderRadius = '6px'
-          downloadBtn.style.border = 'none'
-
-          const closeBtn = document.createElement('button') as HTMLButtonElement
-          closeBtn.type = 'button'
-          closeBtn.textContent = 'Close'
-          closeBtn.style.background = 'transparent'
-          closeBtn.style.color = '#fff'
-          closeBtn.style.padding = '8px 12px'
-          closeBtn.style.border = '1px solid rgba(255,255,255,0.08)'
-          closeBtn.style.borderRadius = '6px'
-
-          const removeOverlay = () => {
-            if (overlay.parentNode) overlay.parentNode.removeChild(overlay)
-            try { URL.revokeObjectURL(url) } catch (e) { /* ignore */ }
-          }
-
-          // Defer creating the downloadable anchor until the user explicitly
-          // taps the Download button — this prevents some mobile browsers
-          // from auto-opening the download manager when the preview is shown.
-          downloadBtn.addEventListener('click', () => {
-            try {
-              const a = document.createElement('a')
-              a.href = url
-              a.download = 'maimai_b50_grid.png'
-              // Append to DOM for some browsers that require it for click()
-              document.body.appendChild(a)
-              a.click()
-              document.body.removeChild(a)
-            } catch (e) {
-              // Fallback: open the image in a new tab
-              try { window.open(url, '_blank') } catch (e) { /* ignore */ }
-            }
-            setTimeout(removeOverlay, 250)
-          })
-
-          closeBtn.addEventListener('click', () => removeOverlay())
-
-          controls.appendChild(downloadBtn)
-          controls.appendChild(closeBtn)
-          modal.appendChild(img)
-          modal.appendChild(controls)
-          modal.addEventListener('click', e => e.stopPropagation())
-          overlay.addEventListener('click', () => removeOverlay())
-          overlay.appendChild(modal)
-          document.body.appendChild(overlay)
-
-          showStatus('Preview ready — close to dismiss or click Download.', 'success')
+        const safeStart = Math.max(0, Math.min(startY, clone.scrollHeight))
+        const safeEnd = Math.max(safeStart, Math.min(endY, clone.scrollHeight))
+        const sy = Math.round(safeStart * scale); const sw = Math.round(canvas.width)
+        const sh = Math.round((safeEnd - safeStart) * scale)
+        if (sh > 0 && sh <= canvas.height) {
+          const cropped = document.createElement('canvas'); cropped.width = sw; cropped.height = sh
+          const ctx = cropped.getContext('2d')
+          if (ctx) ctx.drawImage(canvas, 0, sy, sw, sh, 0, 0, sw, sh)
+          finalCanvas = cropped
         }
+      } catch (e) { finalCanvas = canvas }
 
-        try {
-          // Add a bottom credit bar with padding to both canvases
-          const creditText = 'Generated by adxcalculator.vercel.app'
-          const creditFontSize = 18
-          const creditBarHeight = creditFontSize * 2
+      // Load frame image
+      const frameImg = new Image(); frameImg.crossOrigin = 'anonymous'
+      await new Promise<void>((resolve, reject) => {
+        frameImg.onload = () => resolve()
+        frameImg.onerror = () => reject(new Error('Failed to load frame'))
+        frameImg.src = '/static/image/Frameb50.png'
+      })
 
-          let outputCanvas: HTMLCanvasElement = finalCanvas
-          if (isMobile) {
-            const FIXED_W = 1000
-            const FIXED_H = 1590
-            const canvasH = FIXED_H + creditBarHeight
-            const fixed = document.createElement('canvas')
-            fixed.width = FIXED_W
-            fixed.height = canvasH
-            const fctx = fixed.getContext('2d')
-            if (fctx) {
-              fctx.fillStyle = bg
-              fctx.fillRect(0, 0, FIXED_W, canvasH)
-              const srcW = finalCanvas.width
-              const srcHWanted = Math.round(FIXED_H * scale)
-              const srcH = Math.min(finalCanvas.height, srcHWanted)
-              fctx.drawImage(finalCanvas, 0, 0, srcW, srcH, 0, 0, FIXED_W, FIXED_H)
-            }
-            outputCanvas = fixed
-          } else {
-            const padded = document.createElement('canvas')
-            padded.width = finalCanvas.width
-            padded.height = finalCanvas.height + creditBarHeight
-            const pctx = padded.getContext('2d')
-            if (pctx) {
-              pctx.fillStyle = bg
-              pctx.fillRect(0, 0, padded.width, padded.height)
-              pctx.drawImage(finalCanvas, 0, 0)
-              pctx.font = `${creditFontSize}px sans-serif`
-              pctx.fillStyle = 'rgba(255,255,255,0.4)'
-              pctx.textAlign = 'center'
-              pctx.fillText(creditText, padded.width / 2, padded.height - creditFontSize * 1.2)
-            }
-            outputCanvas = padded
-          }
+      // Composite onto frame
+      const gridW = finalCanvas.width; const gridH = finalCanvas.height
+      const canvasH = gridH + 48
+      const outputCanvas = document.createElement('canvas')
+      outputCanvas.width = FRAME_W; outputCanvas.height = canvasH
+      const outCtx = outputCanvas.getContext('2d')
+      if (!outCtx) throw new Error('No canvas context')
 
-          // Draw credit text on mobile canvas (done here so it uses the full canvas height)
-          if (isMobile) {
-            const outCtx = outputCanvas.getContext('2d')
-            if (outCtx) {
-              outCtx.font = `${creditFontSize}px sans-serif`
-              outCtx.fillStyle = 'rgba(255,255,255,0.4)'
-              outCtx.textAlign = 'center'
-              outCtx.fillText(creditText, outputCanvas.width / 2, outputCanvas.height - creditFontSize * 1.2)
-            }
-          }
+      // Draw frame (crop to canvas height)
+      outCtx.drawImage(frameImg, 0, 0, FRAME_W, Math.min(FRAME_H, canvasH), 0, 0, FRAME_W, Math.min(FRAME_H, canvasH))
 
-          outputCanvas.toBlob((blob) => {
-            if (!blob) {
-              const url = outputCanvas.toDataURL('image/png')
-              showPreviewFromUrl(url)
-              return
-            }
-            const url = URL.createObjectURL(blob)
-            showPreviewFromUrl(url)
-          }, 'image/png')
-        } catch (e) {
-          const url = finalCanvas.toDataURL('image/png')
-          showPreviewFromUrl(url)
-        }
-      } catch (err) {
-        showStatus('Error: ' + (err as Error).message, 'danger')
-      }
+      // Draw grid
+      outCtx.drawImage(finalCanvas, 0, 0, gridW, gridH, 0, 0, gridW, gridH)
+
+      // Credit text right below the grid
+      outCtx.font = '24px sans-serif'; outCtx.fillStyle = '#ffffff'; outCtx.textAlign = 'center'
+      outCtx.fillText('Generated by adxcalculator.vercel.app', FRAME_W / 2, gridH + 36)
+
+      outputCanvas.toBlob((blob) => {
+        if (!blob) { showPreviewFromUrl(outputCanvas.toDataURL('image/png')); return }
+        showPreviewFromUrl(URL.createObjectURL(blob))
+      }, 'image/png')
     } catch (err) {
       showStatus('Error: ' + (err as Error).message, 'danger')
     } finally {
@@ -1511,7 +1335,6 @@ export default function Index() {
           To add an alias to a song, visit the Chart Database page.
         </p>
 
-        {count > 0 && (
         <div className="rounded-xl border bg-card shadow-sm mb-6 overflow-hidden">
           <div ref={gridRef} className="b50-stage">
             <div className="flex flex-wrap items-center gap-4 px-5 py-4">
@@ -1522,59 +1345,46 @@ export default function Index() {
                 </span>
               </div>
               <div className="flex items-center gap-2 ml-auto">
-                {display.old_songs.length > 0 && (
-                  <div className="rounded-lg px-3 py-1.5 text-center" style={{ background: 'rgba(59,130,246,0.15)', border: '1px solid rgba(96,165,250,0.4)' }}>
+                <div className="rounded-lg px-3 py-1.5 text-center" style={{ background: 'rgba(59,130,246,0.15)', border: '1px solid rgba(96,165,250,0.4)' }}>
                     <div className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#93c5fd' }}>Old B35</div>
                     <div className="text-lg font-black leading-none mt-0.5" style={{ color: '#fff' }}>{oldRating}</div>
                     <div className="b50-small-stat">{oldAvg}</div>
                   </div>
-                )}
                 <div className={`rounded-lg px-4 py-1.5 text-center b50-total`} style={milestoneStyle}>
                   <div className="text-[9px] font-bold uppercase tracking-widest b50-total-label">Total</div>
                   <div className="text-xl font-black leading-none mt-0.5 b50-total-value">{totalRating}</div>
                   <div className="b50-small-stat">{avgRating}</div>
                 </div>
-                {display.new_songs.length > 0 && (
-                  <div className="rounded-lg px-3 py-1.5 text-center" style={{ background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(134,239,172,0.4)' }}>
+                <div className="rounded-lg px-3 py-1.5 text-center" style={{ background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(134,239,172,0.4)' }}>
                     <div className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#86efac' }}>New B15</div>
                     <div className="text-lg font-black leading-none mt-0.5" style={{ color: '#fff' }}>{newRating}</div>
                     <div className="b50-small-stat">{newAvg}</div>
                   </div>
-                )}
               </div>
               {/* removed Average Rating subtitle (averages now shown under each category) */}
             </div>
 
-            {display.old_songs.length > 0 && (
-              <>
-                <div className="b50-section-banner b50-banner-old">
-                  <span>★ Best 35 · Old Charts (PRE-PRiSM)</span>
-                  <span className="b50-banner-stat">{oldRating}</span>
-                </div>
-                <div className="b50-grid">
-                  {oldPad.slice(0, 35).map((s, i) => (
-                    <SongCell key={i} song={s ?? null} songDict={maimaiSongsDict} />
-                  ))}
-                </div>
-              </>
-            )}
+            <div className="b50-section-banner b50-banner-old">
+              <span>★ Best 35 · Old Charts (PRE-PRiSM)</span>
+              <span className="b50-banner-stat">{oldRating}</span>
+            </div>
+            <div className="b50-grid">
+              {oldPad.slice(0, 35).map((s, i) => (
+                <SongCell key={i} song={s ?? null} songDict={maimaiSongsDict} />
+              ))}
+            </div>
 
-            {display.new_songs.length > 0 && (
-              <>
-                <div className="b50-section-banner b50-banner-new">
-                  <span>★ Best 15 · New Charts (PRiSM PLUS / CiRCLE)</span>
-                  <span className="b50-banner-stat">{newRating}</span>
-                </div>
-                <div className="b50-grid pb-4">
-                  {newPad.slice(0, 15).map((s, i) => (
-                    <SongCell key={i} song={s ?? null} songDict={maimaiSongsDict} />
-                  ))}
-                </div>
-              </>
-            )}
+            <div className="b50-section-banner b50-banner-new">
+              <span>★ Best 15 · New Charts (PRiSM PLUS / CiRCLE)</span>
+              <span className="b50-banner-stat">{newRating}</span>
+            </div>
+            <div className="b50-grid pb-4">
+              {newPad.slice(0, 15).map((s, i) => (
+                <SongCell key={i} song={s ?? null} songDict={maimaiSongsDict} />
+              ))}
+            </div>
           </div>
         </div>
-        )}
 
         {count > 0 && (
         <div className="rounded-xl border bg-card shadow-sm mb-6 overflow-hidden">
