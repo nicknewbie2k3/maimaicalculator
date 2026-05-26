@@ -952,28 +952,8 @@ export default function Index() {
         width: w, height: h, windowWidth: w, windowHeight: h,
       })
 
-      // Crop to stage content
-      let finalCanvas: HTMLCanvasElement = canvas
-      try {
-        const cloneRect = clone.getBoundingClientRect()
-        const firstChild = clone.firstElementChild as HTMLElement | null
-        const gridNodes = Array.from(clone.querySelectorAll('.b50-grid')) as HTMLElement[]
-        const startY = firstChild ? Math.max(0, firstChild.getBoundingClientRect().top - cloneRect.top) : 0
-        let endY = clone.scrollHeight
-        if (gridNodes.length > 0) {
-          endY = Math.min(clone.scrollHeight, Math.max(endY, gridNodes[gridNodes.length - 1].getBoundingClientRect().bottom - cloneRect.top))
-        }
-        const safeStart = Math.max(0, Math.min(startY, clone.scrollHeight))
-        const safeEnd = Math.max(safeStart, Math.min(endY, clone.scrollHeight))
-        const sy = Math.round(safeStart * scale); const sw = Math.round(canvas.width)
-        const sh = Math.round((safeEnd - safeStart) * scale)
-        if (sh > 0 && sh <= canvas.height) {
-          const cropped = document.createElement('canvas'); cropped.width = sw; cropped.height = sh
-          const ctx = cropped.getContext('2d')
-          if (ctx) ctx.drawImage(canvas, 0, sy, sw, sh, 0, 0, sw, sh)
-          finalCanvas = cropped
-        }
-      } catch (e) { finalCanvas = canvas }
+      // Use full canvas (no cropping — frame provides the border)
+      const finalCanvas: HTMLCanvasElement = canvas
 
       // Load frame image
       const frameImg = new Image(); frameImg.crossOrigin = 'anonymous'
