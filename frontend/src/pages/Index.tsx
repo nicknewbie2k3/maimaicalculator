@@ -952,31 +952,19 @@ export default function Index() {
         width: w, height: h, windowWidth: w, windowHeight: h,
       })
 
-      // Crop black space from top and bottom (sample every 4th pixel for speed)
+      // Crop to content using DOM positions (works even with tainted canvas)
       let finalCanvas: HTMLCanvasElement = canvas
       try {
-        const ctx = canvas.getContext('2d')
-        if (ctx) {
-          const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data
-          const w = canvas.width, h = canvas.height
-          const hasContentAt = (y: number) => {
-            for (let x = 0; x < w; x += 4) {
-              const i = (y * w + x) * 4
-              if (data[i] > 10 || data[i + 1] > 10 || data[i + 2] > 10) return true
-            }
-            return false
-          }
-          let top = 0
-          for (let y = 0; y < h; y += 2) { if (hasContentAt(y)) { top = Math.max(0, y - 2); break } }
-          let bottom = h - 1
-          for (let y = h - 1; y >= 0; y -= 2) { if (hasContentAt(y)) { bottom = Math.min(h - 1, y + 2); break } }
-          if (bottom > top) {
-            const cropH = bottom - top + 1
-            const cropped = document.createElement('canvas'); cropped.width = w; cropped.height = cropH
-            const cctx = cropped.getContext('2d')
-            if (cctx) cctx.drawImage(canvas, 0, top, w, cropH, 0, 0, w, cropH)
-            finalCanvas = cropped
-          }
+        const firstChild = clone.firstElementChild as HTMLElement | null
+        const lastGrid = clone.querySelector('.b50-grid:last-of-type') as HTMLElement | null
+        const top = firstChild ? Math.round((firstChild.getBoundingClientRect().top - clone.getBoundingClientRect().top) * scale) : 0
+        const bottom = lastGrid ? Math.round((lastGrid.getBoundingClientRect().bottom - clone.getBoundingClientRect().top) * scale) : canvas.height
+        if (top > 0 || bottom < canvas.height) {
+          const cropH = Math.max(1, Math.min(bottom, canvas.height) - top)
+          const cropped = document.createElement('canvas'); cropped.width = canvas.width; cropped.height = cropH
+          const cctx = cropped.getContext('2d')
+          if (cctx) cctx.drawImage(canvas, 0, top, canvas.width, cropH, 0, 0, canvas.width, cropH)
+          finalCanvas = cropped
         }
       } catch (e) { /* keep original */ }
 
