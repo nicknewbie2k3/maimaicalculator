@@ -275,7 +275,7 @@ function Autocomplete({ id, value, onChange, options, aliasMap, placeholder }: A
 
 function isNewChart(song: Pick<Song, 'version' | 'song_name'>, dict: SongsDict): boolean {
   const v = song.version || (dict[song.song_name] || {}).version || ''
-  return v === 'PRiSM PLUS' || v === 'CiRCLE'
+  return v === 'CiRCLE' || v === 'CiRCLE PLUS'
 }
 
 function diffClass(d: string): string {
@@ -637,11 +637,26 @@ export default function Index() {
   useEffect(() => {
     const full = readFull()
     if (full && ((full.old_songs && full.old_songs.length) || (full.new_songs && full.new_songs.length))) {
-      setFullDataState(full)
-      // Use the table's full-data ordering/content for the grid so they stay in sync
-      const oldArr = (full.old_songs || []).slice().sort((a, b) => b.calculated_rating - a.calculated_rating).slice(0, 35)
-      const newArr = (full.new_songs || []).slice().sort((a, b) => b.calculated_rating - a.calculated_rating).slice(0, 15)
-      setB50State({ old_songs: oldArr, new_songs: newArr })
+      const recat = recategorize(full, maimaiSongsDict, aliasToTitleMap)
+      // Preserve all songs beyond top 35/15 by merging recategorized into full
+      const allSongs = [...(full.old_songs || []), ...(full.new_songs || [])]
+      const reOld: Song[] = []
+      const reNew: Song[] = []
+      const add = (song: Song, arr: Song[]) => {
+        const idx = arr.findIndex(s => s.song_name === song.song_name && s.difficulty_type === song.difficulty_type)
+        if (idx !== -1) { if (song.achievement > arr[idx].achievement) arr[idx] = song }
+        else arr.push(song)
+      }
+      allSongs.forEach(s => {
+        const isN = isNewChart(s, maimaiSongsDict)
+        add(s, isN ? reNew : reOld)
+      })
+      reOld.sort((a, b) => b.calculated_rating - a.calculated_rating)
+      reNew.sort((a, b) => b.calculated_rating - a.calculated_rating)
+      const recatFull: B50Data = { old_songs: reOld, new_songs: reNew }
+      setFullDataState(recatFull)
+      writeFull(recatFull)
+      setB50State(recat)
     } else {
       const stored = readB50()
       setB50State(recategorize(stored, maimaiSongsDict, aliasToTitleMap))
@@ -1344,6 +1359,9 @@ export default function Index() {
                 <span className="text-5xl font-extrabold leading-tight truncate" style={{ color: '#fff', textShadow: '0 2px 18px rgba(236,72,153,0.6)' }}>
                   {username || 'Unnamed Player'}
                 </span>
+                <span className="text-[14px] font-semibold tracking-widest mt-1" style={{ color: '#a5b4fc', opacity: 0.75 }}>
+                  {new Date().toISOString().split('T')[0]}
+                </span>
               </div>
               <div className="flex items-center gap-2 ml-auto">
                 <div className="rounded-lg px-3 py-1.5 text-center" style={{ background: 'rgba(59,130,246,0.15)', border: '1px solid rgba(96,165,250,0.4)' }}>
@@ -1366,7 +1384,7 @@ export default function Index() {
             </div>
 
             <div className="b50-section-banner b50-banner-old">
-              <span>★ Best 35 · Old Charts (PRE-PRiSM)</span>
+              <span>★ Best 35 · Old Charts (PRE-CIRCLE)</span>
               <span className="b50-banner-stat">{oldRating}</span>
             </div>
             <div className="b50-grid">
@@ -1376,7 +1394,7 @@ export default function Index() {
             </div>
 
             <div className="b50-section-banner b50-banner-new">
-              <span>★ Best 15 · New Charts (PRiSM PLUS / CiRCLE)</span>
+              <span>★ Best 15 · New Charts (CiRCLE / CiRCLE PLUS)</span>
               <span className="b50-banner-stat">{newRating}</span>
             </div>
             <div className="b50-grid pb-4">

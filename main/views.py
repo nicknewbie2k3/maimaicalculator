@@ -1026,15 +1026,15 @@ def convert_astro_cache_to_b50(cache_data):
             }
             
             # Categorize as old or new song based on version information
-            # PRiSM PLUS is the cutoff - everything before PRiSM PLUS is old, PRiSM PLUS+ is new
+            # CiRCLE is the cutoff - everything before CiRCLE is old, CiRCLE+ is new
             version_lower = version.lower()
             
-            # Define specific new versions (PRiSM PLUS and onwards)
+            # Define specific new versions (CiRCLE and onwards)
             new_versions = [
-                'prism plus', 'circle'
+                'circle', 'circle plus'
             ]
             
-            # Check if it's explicitly a new version (PRiSM PLUS or later)
+            # Check if it's explicitly a new version (CiRCLE or later)
             is_new_version = any(new_ver in version_lower for new_ver in new_versions)
             
             if is_new_version:
@@ -2317,12 +2317,12 @@ def convert_cache_data_to_all_scores_format(cache_data):
                 # Categorize as old or new song based on version
                 version_lower = version.lower()
                 
-                # Define specific new versions (PRiSM PLUS and onwards)
+                # Define specific new versions (CiRCLE and onwards)
                 new_versions = [
-                    'prism plus', 'circle'
+                    'circle', 'circle plus'
                 ]
                 
-                # Check if it's explicitly a new version (PRiSM PLUS or later)
+                # Check if it's explicitly a new version (CiRCLE or later)
                 is_new_version = any(new_ver in version_lower for new_ver in new_versions)
                 
                 if is_new_version:
