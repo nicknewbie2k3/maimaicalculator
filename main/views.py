@@ -13,6 +13,10 @@ from django.contrib import messages
 from .models import OldSong, NewSong, MaimaiSong
 from inertia import inertia
 
+# Versions whose charts are excluded from rating/B50 calculation entirely.
+# Adjust this list when the excluded version changes (e.g. currently 'MAGiCAL').
+EXCLUDED_VERSIONS = ['magical']
+
 def parse_decimal(val):
     try:
         return Decimal(val)
@@ -2260,7 +2264,12 @@ def convert_cache_data_to_all_scores_format(cache_data):
                 
                 # Get version from database (fallback to 'Unknown' if not set)
                 version = song_db.version or 'Unknown'
-                
+
+                # Exclude charts belonging to excluded versions entirely.
+                if (version or '').lower() in EXCLUDED_VERSIONS:
+                    print(f"Skipping excluded version chart: {clean_song_name} ({version})")
+                    continue
+
                 # Prefer the assigned title (may include tag assigned earlier); override with DB title if it contains explicit tag
                 final_song_name = assigned_title
                 if song_db.title and (' [DX]' in song_db.title or ' [STD]' in song_db.title):

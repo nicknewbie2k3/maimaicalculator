@@ -24,6 +24,14 @@ import {
   TableCell,
 } from '@/components/ui/table'
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
   Download,
   Upload,
   ArrowLeftRight,
@@ -278,6 +286,26 @@ function isNewChart(song: Pick<Song, 'version' | 'song_name'>, dict: SongsDict):
   return v === 'CiRCLE' || v === 'CiRCLE PLUS'
 }
 
+// Versions whose charts are excluded from rating/B50 calculation entirely.
+// Adjust this list when the excluded version changes (e.g. 'MAGiCAL').
+const EXCLUDED_VERSIONS: string[] = ['MAGiCAL']
+
+function excludedVersion(song: Pick<Song, 'version' | 'song_name'>, dict?: SongsDict): string | null {
+  const v = (song.version || (dict ? (dict[song.song_name] || {}).version : undefined) || '').toString().toLowerCase()
+  return EXCLUDED_VERSIONS.find(ex => v === ex.toLowerCase()) ?? null
+}
+
+function isExcludedChart(song: Pick<Song, 'version' | 'song_name'>, dict?: SongsDict): boolean {
+  return excludedVersion(song, dict) !== null
+}
+
+function sanitizeData(data: B50Data, dict: SongsDict): B50Data {
+  return {
+    old_songs: (data.old_songs || []).filter(s => !isExcludedChart(s, dict)),
+    new_songs: (data.new_songs || []).filter(s => !isExcludedChart(s, dict)),
+  }
+}
+
 function diffClass(d: string): string {
   return ({ basic: 'diff-basic', advanced: 'diff-advanced', expert: 'diff-expert', master: 'diff-master', 're:master': 'diff-remas', remaster: 'diff-remas' } as Record<string, string>)[d.toLowerCase()] || ''
 }
@@ -307,6 +335,7 @@ function recategorize(data: B50Data, dict: SongsDict, aliasMap?: Record<string, 
       const key = resolveCanonical(s.song_name)
       s.version = (dict[key] || {}).version || ''
     }
+    if (isExcludedChart(s, dict)) return
     const isNew = isNewChart(s, dict)
     add(s, isNew ? out.new_songs : out.old_songs)
   })
@@ -379,9 +408,10 @@ function renderRankElement(rank: string | number | null | undefined) {
 interface SongCellProps {
   song: Song | null
   songDict: SongsDict
+  onDoubleClick?: () => void
 }
 
-function SongCell({ song, songDict }: SongCellProps) {
+function SongCell({ song, songDict, onDoubleClick }: SongCellProps) {
   if (!song) return <div className="song-card song-card-empty" />
   const info: SongInfo = songDict[song.song_name] ?? {}
   const chartTag = info.chart_type === 'STD' ? 'STD' : info.chart_type === 'DX' ? 'DX' : ''
@@ -389,7 +419,7 @@ function SongCell({ song, songDict }: SongCellProps) {
   const displayTitle = song.song_name.replace(/\s*\[(?:DX|STD)\]\s*$/i, '')
   const clearIconSrc = song.clear_type ? (CLEAR_ICONS[song.clear_type] || null) : null
   return (
-    <div className={`song-card ${diffClass(song.difficulty_type)}`}>
+    <div className={`song-card ${diffClass(song.difficulty_type)}`} onDoubleClick={onDoubleClick}>
       
       <div className="song-card-art" style={info.image_url ? { backgroundImage: `url(${info.image_url})` } : undefined}>
         {chartTag && <span className={`song-tag ${chartTagClass}`}>{chartTag}</span>}
@@ -429,9 +459,10 @@ interface SongTableProps {
   onSkillSortMetricChange: (metric: 'total' | 'avg') => void
   skillSortDir: 'asc' | 'desc'
   onSkillSortDirChange: (dir: 'asc' | 'desc') => void
+  onDelete?: (song: Song) => void
 }
 
-function SongTable({ songs, idPrefix, maimaiSongsDict, sortColumn, sortDirection, onSort, skillSortType, onSkillSortTypeChange, skillSortMetric, onSkillSortMetricChange, skillSortDir, onSkillSortDirChange }: SongTableProps) {
+function SongTable({ songs, idPrefix, maimaiSongsDict, sortColumn, sortDirection, onSort, skillSortType, onSkillSortTypeChange, skillSortMetric, onSkillSortMetricChange, skillSortDir, onSkillSortDirChange, onDelete }: SongTableProps) {
   const getSkillData = (songName: string, diffType: string) => {
     return getSongSkillData(maimaiSongsDict, songName, diffType)
   }
@@ -522,7 +553,7 @@ function SongTable({ songs, idPrefix, maimaiSongsDict, sortColumn, sortDirection
           : sortedSongs.map((s, i) => {
             const skillData = getSkillData(s.song_name, s.difficulty_type)
             return (
-              <TableRow key={i} className={isNewChart(s, {}) ? 'new-chart-row' : 'old-chart-row'}>
+              <TableRow key={i} className={isNewChart(s, {}) ? 'new-chart-row' : 'old-chart-row'} onDoubleClick={() => onDelete?.(s)}>
                 <TableCell className="text-muted-foreground text-xs w-8">{i + 1}</TableCell>
                 <TableCell className="w-12 text-center">
                   {s.clear_type && CLEAR_ICONS[s.clear_type] ? (
@@ -596,6 +627,7 @@ export default function Index() {
   const [skillSortType, setSkillSortType] = useState<'slide' | 'spin' | 'taps' | 'trills'>('slide')
   const [skillSortMetric, setSkillSortMetric] = useState<'total' | 'avg'>('total')
   const [skillSortDir, setSkillSortDir] = useState<'asc' | 'desc'>('asc')
+  const [deleteTarget, setDeleteTarget] = useState<Song | null>(null)
 
   const handleSort = useCallback((column: string) => {
     if (sortColumn === column) {
@@ -634,6 +666,32 @@ export default function Index() {
   const readFull = (): B50Data | null => { try { return JSON.parse(localStorage.getItem(FULL_KEY) || 'null') as B50Data | null } catch { return null } }
   const writeFull = (d: B50Data) => { try { localStorage.setItem(FULL_KEY, JSON.stringify(d)); setFullDataState(d) } catch { /* storage quota exceeded */ } }
 
+  const songKey = (s: Song) => `${s.song_name}||${s.difficulty_type}`
+
+  const confirmDelete = () => {
+    if (!deleteTarget) return
+    const targetKey = songKey(deleteTarget)
+
+    const full = readFull()
+    if (full && ((full.old_songs && full.old_songs.length) || (full.new_songs && full.new_songs.length))) {
+      const nextFull: B50Data = {
+        old_songs: (full.old_songs || []).filter(s => songKey(s) !== targetKey),
+        new_songs: (full.new_songs || []).filter(s => songKey(s) !== targetKey),
+      }
+      writeFull(nextFull)
+      writeB50(recategorize(nextFull, maimaiSongsDict, aliasToTitleMap))
+    } else {
+      const nextB50: B50Data = {
+        old_songs: b50.old_songs.filter(s => songKey(s) !== targetKey),
+        new_songs: b50.new_songs.filter(s => songKey(s) !== targetKey),
+      }
+      writeB50(nextB50)
+    }
+
+    showStatus(`Deleted "${deleteTarget.song_name}" (${deleteTarget.difficulty_type}).`, 'success')
+    setDeleteTarget(null)
+  }
+
   useEffect(() => {
     const full = readFull()
     if (full && ((full.old_songs && full.old_songs.length) || (full.new_songs && full.new_songs.length))) {
@@ -648,6 +706,7 @@ export default function Index() {
         else arr.push(song)
       }
       allSongs.forEach(s => {
+        if (isExcludedChart(s, maimaiSongsDict)) return
         const isN = isNewChart(s, maimaiSongsDict)
         add(s, isN ? reNew : reOld)
       })
@@ -707,6 +766,10 @@ export default function Index() {
       if (data.status !== 'success') return
       const song = data.song_data
       if (!song.version) song.version = (maimaiSongsDict[song.song_name] || {}).version || ''
+      if (isExcludedChart(song, maimaiSongsDict)) {
+        showStatus(`"${song.song_name}" belongs to an excluded version and is not counted.`, 'warning')
+        return
+      }
       const raw = readB50()
       const isNew = isNewChart(song, maimaiSongsDict)
       const arr = isNew ? raw.new_songs : raw.old_songs
@@ -738,7 +801,7 @@ export default function Index() {
       const res = await fetch('/load-b50/', { method: 'POST', body: fd })
       const data = await res.json() as { status: string; message: string; data: B50Data }
       if (data.status === 'success') {
-        writeFull(data.data)
+        writeFull(sanitizeData(data.data, maimaiSongsDict))
         const rec = recategorize(data.data, maimaiSongsDict, aliasToTitleMap)
         writeB50(rec)
         showStatus(`${data.message} Imported ${rec.old_songs.length} old and ${rec.new_songs.length} new songs.`, 'success')
@@ -755,8 +818,8 @@ export default function Index() {
       const res = await fetch('/convert-cache-to-all-scores/', { method: 'POST', body: fd })
       const data = await res.json() as { status: string; message: string; b35_15_data?: B50Data; data?: B50Data }
       if (data.status === 'success') {
-        if (data.b35_15_data) writeB50(data.b35_15_data)
-        if (data.data) writeFull(data.data)
+        if (data.b35_15_data) writeB50(sanitizeData(data.b35_15_data, maimaiSongsDict))
+        if (data.data) writeFull(sanitizeData(data.data, maimaiSongsDict))
         showStatus(data.message, 'success', 5000)
       } else showStatus('Error: ' + data.message, 'danger', 7000)
     } catch (err) { showStatus('Network error: ' + (err as Error).message, 'danger', 7000) }
@@ -1389,7 +1452,7 @@ export default function Index() {
             </div>
             <div className="b50-grid">
               {oldPad.slice(0, 35).map((s, i) => (
-                <SongCell key={i} song={s ?? null} songDict={maimaiSongsDict} />
+                <SongCell key={i} song={s ?? null} songDict={maimaiSongsDict} onDoubleClick={() => s && setDeleteTarget(s)} />
               ))}
             </div>
 
@@ -1399,7 +1462,7 @@ export default function Index() {
             </div>
             <div className="b50-grid pb-4">
               {newPad.slice(0, 15).map((s, i) => (
-                <SongCell key={i} song={s ?? null} songDict={maimaiSongsDict} />
+                <SongCell key={i} song={s ?? null} songDict={maimaiSongsDict} onDoubleClick={() => s && setDeleteTarget(s)} />
               ))}
             </div>
           </div>
@@ -1541,7 +1604,7 @@ export default function Index() {
               <div className="px-4 py-3 border-b bg-muted/30">
                 <h2 className="text-sm font-semibold">Filtered Songs — {combinedFiltered.length} chart scores</h2>
               </div>
-              <SongTable label="Filtered Songs" songs={combinedFiltered} idPrefix="combined" maimaiSongsDict={maimaiSongsDict} sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSort} skillSortType={skillSortType} onSkillSortTypeChange={setSkillSortType} skillSortMetric={skillSortMetric} onSkillSortMetricChange={setSkillSortMetric} skillSortDir={skillSortDir} onSkillSortDirChange={setSkillSortDir} />
+              <SongTable label="Filtered Songs" songs={combinedFiltered} idPrefix="combined" maimaiSongsDict={maimaiSongsDict} sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSort} skillSortType={skillSortType} onSkillSortTypeChange={setSkillSortType} skillSortMetric={skillSortMetric} onSkillSortMetricChange={setSkillSortMetric} skillSortDir={skillSortDir} onSkillSortDirChange={setSkillSortDir} onDelete={setDeleteTarget} />
             </div>
           ) : (
             <div className="rounded-xl border bg-card shadow-sm overflow-hidden mb-6">
@@ -1558,7 +1621,7 @@ export default function Index() {
                 <div className="px-4 py-3 border-b bg-muted/30">
                   <h2 className="text-sm font-semibold">Old Songs — All {fullData?.old_songs?.length ?? display.old_songs.length} chart scores</h2>
                 </div>
-                <SongTable label="Old Songs" songs={filteredTableOld} idPrefix="old" maimaiSongsDict={maimaiSongsDict} sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSort} skillSortType={skillSortType} onSkillSortTypeChange={setSkillSortType} skillSortMetric={skillSortMetric} onSkillSortMetricChange={setSkillSortMetric} skillSortDir={skillSortDir} onSkillSortDirChange={setSkillSortDir} />
+                <SongTable label="Old Songs" songs={filteredTableOld} idPrefix="old" maimaiSongsDict={maimaiSongsDict} sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSort} skillSortType={skillSortType} onSkillSortTypeChange={setSkillSortType} skillSortMetric={skillSortMetric} onSkillSortMetricChange={setSkillSortMetric} skillSortDir={skillSortDir} onSkillSortDirChange={setSkillSortDir} onDelete={setDeleteTarget} />
               </div>
             )}
             {filteredTableNew.length > 0 && (
@@ -1566,12 +1629,27 @@ export default function Index() {
                 <div className="px-4 py-3 border-b bg-muted/30">
                   <h2 className="text-sm font-semibold">New Songs — All {fullData?.new_songs?.length ?? display.new_songs.length} chart scores</h2>
                 </div>
-                <SongTable label="New Songs" songs={filteredTableNew} idPrefix="new" maimaiSongsDict={maimaiSongsDict} sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSort} skillSortType={skillSortType} onSkillSortTypeChange={setSkillSortType} skillSortMetric={skillSortMetric} onSkillSortMetricChange={setSkillSortMetric} skillSortDir={skillSortDir} onSkillSortDirChange={setSkillSortDir} />
+                <SongTable label="New Songs" songs={filteredTableNew} idPrefix="new" maimaiSongsDict={maimaiSongsDict} sortColumn={sortColumn} sortDirection={sortDirection} onSort={handleSort} skillSortType={skillSortType} onSkillSortTypeChange={setSkillSortType} skillSortMetric={skillSortMetric} onSkillSortMetricChange={setSkillSortMetric} skillSortDir={skillSortDir} onSkillSortDirChange={setSkillSortDir} onDelete={setDeleteTarget} />
               </div>
             )}
           </>
         )}
       </div>
+
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Delete score?</DialogTitle>
+            <DialogDescription>
+              This will remove {deleteTarget ? `"${deleteTarget.song_name}" (${deleteTarget.difficulty_type})` : 'this score'} from both the B50 grid and the score list.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={confirmDelete}>Delete</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </MainLayout>
   )
 }
